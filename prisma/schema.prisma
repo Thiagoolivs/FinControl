@@ -1,0 +1,770 @@
+// Convenções
+// - Dinheiro: Int em centavos (sufixo Cents). Percentual: Int em basis points (sufixo Bps; 12% = 1200).
+// - Transaction.amountCents: negativo = saída, positivo = entrada (sinal normalizado na ingestão).
+// - Campos @db.Date são datas locais em America/Sao_Paulo.
+// - userId direto em toda entidade consultável: o filtro de acesso é sempre por coluna, nunca por join.
+// - Caches (Bucket.balanceCents, Goal.currentCents) são recalculáveis a partir dos lançamentos.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────
+
+enum Scope {
+  PF
+  PJ
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT
+  INVESTMENT
+}
+
+// Espelha Item.status da Pluggy; valor desconhecido vira OUTDATED no adapter.
+enum ConnectionStatus {
+  CREATED
+  UPDATING
+  UPDATED
+  WAITING_USER_INPUT
+  LOGIN_ERROR
+  OUTDATED
+}
+
+enum SyncTrigger {
+  CRON
+  MANUAL
+}
+
+enum SyncStatus {
+  EM_ANDAMENTO
+  SUCESSO
+  ERRO
+}
+
+enum TransactionStatus {
+  PENDING
+  POSTED
+}
+
+enum RevenueStreamType {
+  SALARIO_FIXO
+  PROJETO
+  VENTURE
+  OUTRO
+}
+
+enum BucketType {
+  RESERVA_IMPOSTO
+  RESERVA_CUSTO
+  DISPONIVEL
+  CAIXA_PROJETO
+}
+
+enum BucketEntryKind {
+  ALOCACAO // split automático de uma entrada pelas % da stream
+  OBRIGACAO_FIXA // reserva mensal de valor fixo (DAS)
+  PAGAMENTO // saída paga com dinheiro do bucket
+  RETIRADA // caixa do negócio → disponível
+  AJUSTE // correção manual
+}
+
+enum CategoryKind {
+  ESSENCIAL
+  VARIAVEL
+  INVESTIMENTO
+  TRANSFERENCIA
+}
+
+enum MatchType {
+  PREFIX
+  CONTAINS
+  REGEX
+}
+
+enum RuleOrigin {
+  MANUAL
+  IA_CONFIRMADA
+}
+
+enum RuleDirection {
+  AMBAS
+  ENTRADA
+  SAIDA
+}
+
+enum SuggestionStatus {
+  PENDENTE
+  ACEITA
+  CORRIGIDA
+  IGNORADA
+}
+
+enum RecurrenceStatus {
+  ATIVA
+  ENCERRADA
+}
+
+enum GoalStatus {
+  ATIVA
+  PAUSADA
+  CONCLUIDA
+  ARQUIVADA
+}
+
+enum AssetClass {
+  ACAO
+  FII
+  RENDA_FIXA
+  CRIPTO
+  FUNDO
+}
+
+enum HoldingOrigin {
+  PLUGGY
+  MANUAL
+}
+
+enum BenchmarkSeries {
+  CDI // SGS 12
+  SELIC // SGS 11
+  IPCA // SGS 433
+}
+
+enum AlertType {
+  GASTO_UNICO_ALTO
+  CATEGORIA_ACIMA_MEDIA
+  ASSINATURA_NOVA
+  FATURA_ACIMA_PREVISTO
+  META_ATRASADA
+  CONEXAO_ERRO
+  CONSENTIMENTO_EXPIRANDO
+  SALDO_PROJETADO_NEGATIVO
+  RESERVA_IMPOSTO_BAIXA
+  ENTRADA_SEM_STREAM
+  LIMITE_FATURAMENTO_MEI
+}
+
+enum Severity {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum ChatRole {
+  USER
+  MODEL
+  TOOL
+}
+
+enum ProposalStatus {
+  PENDENTE
+  CONFIRMADA
+  CANCELADA
+  EXPIRADA
+}
+
+enum AuditOrigin {
+  USER
+  AI
+}
+
+// ─── Identidade ──────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String // argon2id
+  totpSecretEnc String? // AES-256-GCM, chave derivada de AUTH_SECRET
+  totpEnabledAt DateTime? // null = só acessa a tela de setup do 2FA
+  totpLastStep  Int? // anti-replay: o mesmo código não vale duas vezes
+  name          String?
+  aboutMe       String?   @db.Text // "quem sou eu" no system prompt da IA
+  timezone      String    @default("America/Sao_Paulo")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions          Session[]
+  connections       Connection[]
+  syncRuns          SyncRun[]
+  accounts          Account[]
+  bills             CreditCardBill[]
+  transactions      Transaction[]
+  categories        Category[]
+  rules             Rule[]
+  ruleSuggestions   RuleSuggestion[]
+  recurringSeries   RecurringSeries[]
+  revenueStreams    RevenueStream[]
+  buckets           Bucket[]
+  bucketEntries     BucketEntry[]
+  fixedObligations  FixedObligation[]
+  goals             Goal[]
+  holdings          Holding[]
+  allocationTargets AllocationTarget[]
+  alerts            Alert[]
+  alertRules        AlertRule[]
+  pushSubscriptions PushSubscription[]
+  chatMessages      ChatMessage[]
+  aiProposals       AiProposal[]
+  auditLogs         AuditLog[]
+}
+
+model Session {
+  id            String    @id @default(cuid())
+  userId        String
+  tokenHash     String    @unique // sha256 do token do cookie; o token em claro nunca é salvo
+  mfaVerifiedAt DateTime? // senha ok + TOTP pendente = null → sessão sem acesso a dados
+  expiresAt     DateTime
+  lastSeenAt    DateTime  @default(now())
+  userAgent     String?
+  ip            String?
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─── Open Finance ────────────────────────────────────────────────────────
+
+model Connection {
+  id               String           @id @default(cuid())
+  userId           String
+  scope            Scope
+  pluggyItemId     String           @unique // reutilizado sempre; nunca criar item novo para conexão existente
+  connectorId      Int
+  institutionName  String
+  institutionLogo  String?
+  status           ConnectionStatus
+  statusDetail     String? // executionStatus / mensagem de erro da Pluggy
+  lastSyncAt       DateTime?
+  consentExpiresAt DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts Account[]
+  syncRuns SyncRun[]
+
+  @@index([userId])
+}
+
+// Histórico de sync: base do cooldown de 6h do refresh manual e do diagnóstico de erro.
+model SyncRun {
+  id           String      @id @default(cuid())
+  userId       String
+  connectionId String
+  trigger      SyncTrigger
+  status       SyncStatus
+  startedAt    DateTime    @default(now())
+  finishedAt   DateTime?
+  stats        Json? // { contas, novas, atualizadas, removidas, transferencias }
+  error        String?     @db.Text
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, trigger, startedAt])
+  @@index([connectionId, startedAt])
+}
+
+model Account {
+  id                   String      @id @default(cuid())
+  userId               String
+  connectionId         String? // null = conta manual, ou conexão removida (histórico preservado)
+  pluggyAccountId      String?     @unique
+  scope                Scope // espelha Connection.scope; obrigatório também em conta manual
+  type                 AccountType
+  name                 String
+  number               String? // mascarado, como vem da Pluggy
+  balanceCents         Int // CREDIT: valor devido na fatura aberta, positivo
+  currency             String      @default("BRL")
+  creditLimitCents     Int?
+  availableCreditCents Int?
+  includeInTotals      Boolean     @default(true)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection   Connection?      @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+  bills        CreditCardBill[]
+  holdings     Holding[]
+
+  @@index([userId, scope])
+}
+
+// Faturas da Pluggy: base do alerta "fatura acima do previsto" e do pareamento do pagamento.
+model CreditCardBill {
+  id                  String   @id @default(cuid())
+  userId              String
+  accountId           String
+  pluggyBillId        String   @unique
+  dueDate             DateTime @db.Date
+  totalAmountCents    Int
+  minimumPaymentCents Int?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, dueDate])
+}
+
+model Transaction {
+  id                  String            @id @default(cuid())
+  userId              String
+  accountId           String
+  scope               Scope // espelha Account.scope; gravado na ingestão
+  pluggyTransactionId String            @unique // chave de deduplicação: sempre upsert
+  status              TransactionStatus @default(POSTED) // PENDING que some da Pluggy é removida no sync
+  date                DateTime          @db.Date
+  amountCents         Int
+  descriptionRaw      String
+  descriptionClean    String
+  providerCategory    String? // categoria da Pluggy; só insumo para a IA, nunca exibida como verdade
+  categoryId          String?
+  ruleId              String? // regra que categorizou; null = manual ou pendente
+  revenueStreamId     String? // obrigatório em receita (validado na aplicação; vazio → fila de revisão)
+  suggestionId        String?
+  recurringSeriesId   String?
+  transferPeerId      String?           @unique // outra perna da transferência; as duas apontam uma para a outra
+  isRecurring         Boolean           @default(false)
+  isIgnored           Boolean           @default(false)
+  installmentCurrent  Int?
+  installmentTotal    Int?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account         Account            @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  rule            Rule?              @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  revenueStream   RevenueStream?     @relation(fields: [revenueStreamId], references: [id], onDelete: SetNull)
+  suggestion      RuleSuggestion?    @relation(fields: [suggestionId], references: [id], onDelete: SetNull)
+  recurringSeries RecurringSeries?   @relation(fields: [recurringSeriesId], references: [id], onDelete: SetNull)
+  transferPeer    Transaction?       @relation("TransferPair", fields: [transferPeerId], references: [id], onDelete: SetNull)
+  transferPeerOf  Transaction?       @relation("TransferPair")
+  bucketEntries   BucketEntry[]
+  contributions   GoalContribution[]
+
+  @@index([userId, scope, date])
+  @@index([accountId, date])
+  @@index([userId, categoryId])
+  @@index([userId, revenueStreamId])
+}
+
+// ─── Categorização ───────────────────────────────────────────────────────
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String
+  parentId  String? // no máximo duas camadas (validado na aplicação)
+  name      String
+  icon      String
+  color     String
+  kind      CategoryKind
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent          Category?         @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children        Category[]        @relation("CategoryTree")
+  transactions    Transaction[]
+  rules           Rule[]
+  suggestions     RuleSuggestion[]
+  recurringSeries RecurringSeries[]
+
+  @@unique([userId, parentId, name])
+}
+
+model Rule {
+  id              String        @id @default(cuid())
+  userId          String
+  pattern         String
+  matchType       MatchType
+  direction       RuleDirection @default(AMBAS)
+  scope           Scope? // null = vale para PF e PJ
+  // Destinos: pelo menos um preenchido (validado na aplicação).
+  categoryId      String?
+  revenueStreamId String? // entradas: atribui a stream (ex.: TED do cliente → Salário fixo)
+  bucketId        String? // saídas: debita o bucket (ex.: pagamento do DAS sai da reserva de imposto)
+  priority        Int // menor = avaliada primeiro
+  origin          RuleOrigin
+  active          Boolean       @default(true)
+  hitCount        Int           @default(0)
+  lastHitAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      Category?       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  revenueStream RevenueStream?  @relation(fields: [revenueStreamId], references: [id], onDelete: Cascade)
+  bucket        Bucket?         @relation(fields: [bucketId], references: [id], onDelete: SetNull)
+  transactions  Transaction[]
+  suggestion    RuleSuggestion?
+
+  @@index([userId, active, priority])
+}
+
+// Proposta da IA para um lote de desconhecidos que compartilham o mesmo padrão.
+model RuleSuggestion {
+  id              String           @id @default(cuid())
+  userId          String
+  pattern         String // generalizado (ex.: "PAG*IFOOD")
+  matchType       MatchType
+  categoryId      String?
+  revenueStreamId String?
+  status          SuggestionStatus @default(PENDENTE)
+  ruleId          String?          @unique // regra criada ao aceitar/corrigir
+  createdAt       DateTime         @default(now())
+  resolvedAt      DateTime?
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  revenueStream RevenueStream? @relation(fields: [revenueStreamId], references: [id], onDelete: SetNull)
+  rule          Rule?          @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  transactions  Transaction[]
+
+  @@index([userId, status])
+}
+
+// Recorrência detectada (±10% de valor, mesmo intervalo, 3+ ocorrências).
+// Base da projeção e do alerta "assinatura nova" (firstDetectedAt).
+model RecurringSeries {
+  id               String           @id @default(cuid())
+  userId           String
+  scope            Scope
+  key              String // descrição limpa normalizada + sentido
+  avgAmountCents   Int // sinal = sentido
+  intervalDays     Int // 30 mensal, 7 semanal, 365 anual
+  occurrences      Int
+  lastDate         DateTime         @db.Date
+  nextExpectedDate DateTime         @db.Date
+  status           RecurrenceStatus @default(ATIVA)
+  categoryId       String?
+  revenueStreamId  String?
+  firstDetectedAt  DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  revenueStream RevenueStream? @relation(fields: [revenueStreamId], references: [id], onDelete: SetNull)
+  transactions  Transaction[]
+
+  @@unique([userId, scope, key])
+}
+
+// ─── Receitas, buckets e reservas ────────────────────────────────────────
+
+model RevenueStream {
+  id             String            @id @default(cuid())
+  userId         String
+  scope          Scope
+  name           String
+  type           RevenueStreamType
+  color          String
+  active         Boolean           @default(true)
+  taxReserveBps  Int               @default(0) // MEI: 0 — o DAS é reservado por FixedObligation, não por %
+  costReserveBps Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buckets         Bucket[]
+  transactions    Transaction[]
+  rules           Rule[]
+  suggestions     RuleSuggestion[]
+  recurringSeries RecurringSeries[]
+
+  @@unique([userId, name])
+}
+
+model Bucket {
+  id              String     @id @default(cuid())
+  userId          String
+  scope           Scope
+  revenueStreamId String? // null = bucket compartilhado do scope (ex.: reserva de imposto da PJ)
+  name            String
+  type            BucketType
+  color           String
+  balanceCents    Int        @default(0) // cache de Σ BucketEntry.amountCents
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revenueStream RevenueStream?    @relation(fields: [revenueStreamId], references: [id], onDelete: Restrict)
+  entries       BucketEntry[]
+  obligations   FixedObligation[]
+  rules         Rule[]
+
+  @@index([userId, scope])
+}
+
+// Ledger dos buckets. Uma entrada de 10.000 vira até três linhas (imposto, custo, disponível).
+model BucketEntry {
+  id              String          @id @default(cuid())
+  userId          String
+  bucketId        String
+  kind            BucketEntryKind
+  date            DateTime        @db.Date
+  amountCents     Int // positivo = entra no bucket, negativo = sai
+  transactionId   String?
+  obligationId    String?
+  competence      String? // "2026-10" — só em OBRIGACAO_FIXA
+  transferGroupId String? // as duas pernas de uma retirada compartilham o id
+  note            String?
+  createdAt       DateTime        @default(now())
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket      Bucket           @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+  transaction Transaction?     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  obligation  FixedObligation? @relation(fields: [obligationId], references: [id], onDelete: Restrict)
+
+  @@unique([obligationId, competence]) // o DAS de um mês é reservado uma vez, nunca duas
+  @@index([bucketId, date])
+  @@index([transactionId])
+  @@index([transferGroupId])
+}
+
+// Reserva de valor fixo por competência, independente da receita. Seed: "DAS MEI", 8650, vence dia 20.
+model FixedObligation {
+  id          String   @id @default(cuid())
+  userId      String
+  scope       Scope
+  bucketId    String
+  name        String
+  amountCents Int
+  dueDay      Int // dia do vencimento no mês seguinte à competência
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket  Bucket        @relation(fields: [bucketId], references: [id], onDelete: Restrict)
+  entries BucketEntry[]
+}
+
+// ─── Metas ───────────────────────────────────────────────────────────────
+
+model Goal {
+  id                   String     @id @default(cuid())
+  userId               String
+  scope                Scope
+  name                 String
+  targetCents          Int
+  currentCents         Int        @default(0) // cache de Σ GoalContribution
+  targetDate           DateTime   @db.Date
+  monthlyRequiredCents Int        @default(0) // (alvo − atual) / meses restantes
+  color                String
+  status               GoalStatus @default(ATIVA)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions GoalContribution[]
+  snapshots     GoalSnapshot[]
+
+  @@index([userId, status])
+}
+
+model GoalContribution {
+  id            String   @id @default(cuid())
+  goalId        String
+  date          DateTime @db.Date
+  amountCents   Int // negativo = resgate
+  transactionId String?
+  note          String?
+  createdAt     DateTime @default(now())
+
+  goal        Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([goalId, date])
+}
+
+// Foto mensal da meta. "Atrasada" = monthlyRequiredCents subiu em dois snapshots seguidos.
+model GoalSnapshot {
+  id                   String   @id @default(cuid())
+  goalId               String
+  month                String // "2026-10"
+  currentCents         Int
+  monthlyRequiredCents Int
+  createdAt            DateTime @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, month])
+}
+
+// ─── Investimentos ───────────────────────────────────────────────────────
+
+model Holding {
+  id                 String        @id @default(cuid())
+  userId             String
+  accountId          String
+  pluggyInvestmentId String?       @unique
+  ticker             String? // null em renda fixa sem ticker (CDB, LCI…)
+  name               String
+  assetClass         AssetClass
+  origin             HoldingOrigin
+  quantity           Decimal       @db.Decimal(28, 10) // quantidade, não dinheiro: cripto e cotas são fracionárias
+  avgPriceCents      Int
+  currentValueCents  Int? // valor da Pluggy (renda fixa, fundos); ação/FII/cripto usam Quote
+  maturityDate       DateTime?     @db.Date
+  indexer            String? // "CDI", "IPCA", "PRE", como vem da Pluggy
+  valueUpdatedAt     DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, assetClass])
+}
+
+model AllocationTarget {
+  id         String     @id @default(cuid())
+  userId     String
+  assetClass AssetClass
+  targetBps  Int // Σ por usuário = 10000 (validado na aplicação)
+  updatedAt  DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetClass])
+}
+
+// Cache da brapi, global (não é dado do usuário). TTL 12h, preenchido só pelo cron.
+model Quote {
+  ticker     String   @id
+  priceCents Int
+  changeBps  Int // variação do dia; 153 = +1,53%
+  fetchedAt  DateTime
+}
+
+// Cache do SGS/BCB. Taxa, não dinheiro: Decimal é aceitável aqui.
+model BenchmarkRate {
+  series BenchmarkSeries
+  date   DateTime        @db.Date
+  value  Decimal         @db.Decimal(12, 8) // % do período como publicado (CDI/Selic diária, IPCA mensal)
+
+  @@id([series, date])
+}
+
+// ─── Alertas e push ──────────────────────────────────────────────────────
+
+model Alert {
+  id          String    @id @default(cuid())
+  userId      String
+  alertRuleId String?
+  scope       Scope
+  type        AlertType
+  severity    Severity
+  title       String
+  body        String    @db.Text
+  payload     Json // ids e números de origem; a IA explica a partir daqui, não recalcula
+  dedupeKey   String // ex.: "CONSENTIMENTO_EXPIRANDO:<connectionId>" — o mesmo fato não vira dois alertas
+  readAt      DateTime?
+  pushedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertRule AlertRule? @relation(fields: [alertRuleId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+}
+
+model AlertRule {
+  id        String    @id @default(cuid())
+  userId    String
+  type      AlertType
+  params    Json // ex.: { "limiteCents": 50000, "scope": "PF" }
+  severity  Severity
+  push      Boolean // seed: true só quando severity = ALTA
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts Alert[]
+
+  @@index([userId, active])
+}
+
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  endpoint   String    @unique // removida automaticamente em 404/410
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── IA e auditoria ──────────────────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  role      ChatRole
+  content   String   @db.Text
+  toolCalls Json? // chamadas e respostas de tool do turno
+  createdAt DateTime @default(now())
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proposals AiProposal[]
+
+  @@index([userId, createdAt])
+}
+
+// Proposta de escrita da IA. O "Confirmar" executa os args gravados aqui, nunca o que vier do cliente.
+model AiProposal {
+  id            String         @id @default(cuid())
+  userId        String
+  chatMessageId String?
+  tool          String // ex.: "proporRegraCategoria"
+  args          Json // validado por zod antes de gravar
+  preview       Json // o que o ConfirmationCard mostra
+  status        ProposalStatus @default(PENDENTE)
+  expiresAt     DateTime
+  resolvedAt    DateTime?
+  createdAt     DateTime       @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatMessage ChatMessage? @relation(fields: [chatMessageId], references: [id], onDelete: SetNull)
+  auditLogs   AuditLog[]
+
+  @@index([userId, status])
+}
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String
+  action     String // ex.: "rule.create", "transaction.recategorize"
+  entity     String
+  entityId   String?
+  before     Json?
+  after      Json?
+  origin     AuditOrigin
+  proposalId String?
+  createdAt  DateTime    @default(now())
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proposal AiProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([entity, entityId])
+}

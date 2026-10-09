@@ -27,11 +27,15 @@ export function centsParts(cents: number, options: { signed?: boolean } = {}): C
   return { sign, units: groupThousands(units), cents: String(rest).padStart(2, "0") };
 }
 
-/** 1430580 → "R$ 14.305,80"; -5890 → "−R$ 58,90". */
-export function formatCents(cents: number, options: { signed?: boolean; symbol?: boolean } = {}): string {
+/** 1430580 → "R$ 14.305,80"; -5890 → "−R$ 58,90". `hideZeroCents`: 1900000 → "R$ 19.000". */
+export function formatCents(
+  cents: number,
+  options: { signed?: boolean; symbol?: boolean; hideZeroCents?: boolean } = {},
+): string {
   const { sign, units, cents: rest } = centsParts(cents, options);
   const symbol = options.symbol === false ? "" : "R$ ";
-  return `${sign}${symbol}${units},${rest}`;
+  const fraction = options.hideZeroCents && rest === "00" ? "" : `,${rest}`;
+  return `${sign}${symbol}${units}${fraction}`;
 }
 
 /** Para eixos e rótulos curtos: 2000000 → "R$ 20 mil"; 150000 → "R$ 1,5 mil"; 120000000 → "R$ 1,2 mi". */

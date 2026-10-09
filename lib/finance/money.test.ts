@@ -40,6 +40,12 @@ describe("formatCents", () => {
   it("omite o símbolo quando pedido", () => {
     expect(formatCents(1430580, { symbol: false })).toBe("14.305,80");
   });
+
+  it("omite centavos zerados só quando pedido", () => {
+    expect(formatCents(1900000, { hideZeroCents: true })).toBe("R$ 19.000");
+    expect(formatCents(1900050, { hideZeroCents: true })).toBe("R$ 19.000,50");
+    expect(formatCents(1900000)).toBe("R$ 19.000,00");
+  });
 });
 
 describe("centsParts", () => {

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Tokens do design system (CLAUDE.md). Dark é o padrão; light via data-theme. */
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0b;
+  --surface: #141416;
+  --surface-elevated: #1c1c1f;
+  --border: rgba(255, 255, 255, 0.06);
+  --text-primary: #f5f5f7;
+  --text-secondary: #8e8e93;
+  --text-tertiary: #5a5a5f;
+  --accent: #0a84ff;
+  --accent-fill: #0066dd;
+  --positive: #30d158;
+  --negative: #ff453a;
+  --warning: #ff9f0a;
+  --scope-pj: #bf5af2;
+  --badge: #d70015;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2f2f7;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --border: rgba(0, 0, 0, 0.06);
+  --text-primary: #1c1c1e;
+  --text-secondary: #6c6c70;
+  --text-tertiary: #aeaeb2;
+  --accent: #0062cc;
+  --accent-fill: #0062cc;
+  --positive: #248a3d;
+  --negative: #d70015;
+  --warning: #b25000;
+  --scope-pj: #8944ab;
+  --badge: #d70015;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-border: var(--border);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent: var(--accent);
+  --color-accent-fill: var(--accent-fill);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-scope-pj: var(--scope-pj);
+  --color-badge: var(--badge);
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --radius-card: 16px;
+  --radius-button: 12px;
+  --ease-apple: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}

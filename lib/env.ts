@@ -19,6 +19,23 @@ export type ServerEnv = z.infer<typeof schema>;
 let cached: ServerEnv | undefined;
 
 export function serverEnv(): ServerEnv {
-  cached ??= schema.parse(process.env);
+  if (!cached) {
+    const result = schema.safeParse(process.env);
+    if (!result.success) {
+      const problems = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+      throw new Error(`Variáveis de ambiente inválidas — ${problems}`);
+    }
+    cached = result.data;
+  }
   return cached;
+}
+
+/** Usado no boot do servidor: encerra o processo para o Railway marcar o deploy como falho. */
+export function exitOnInvalidEnv(): void {
+  try {
+    serverEnv();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
 }

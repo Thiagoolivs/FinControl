@@ -23,6 +23,8 @@ npm run db:migrate -- --name <nome>  # nova migration
 npm run user:create                  # cria usuário + ativa TOTP (interativo)
 ```
 
+Deploy no Railway: passo a passo no `README.md`. `instrumentation.ts` valida as variáveis no boot e encerra o processo se faltar alguma.
+
 ## Estrutura
 
 ```

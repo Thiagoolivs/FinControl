@@ -17,6 +17,13 @@
   --warning: #ff9f0a;
   --scope-pj: #bf5af2;
   --badge: #d70015;
+  /* Escala neutra das categorias, por ordem de tamanho. Cor de categoria não carrega significado. */
+  --cat-1: #f5f5f7;
+  --cat-2: #c7c7cc;
+  --cat-3: #aeaeb2;
+  --cat-4: #8e8e93;
+  --cat-5: #6e6e73;
+  --grid: rgba(255, 255, 255, 0.08);
 }
 
 :root[data-theme="light"] {
@@ -35,6 +42,12 @@
   --warning: #b25000;
   --scope-pj: #8944ab;
   --badge: #d70015;
+  --cat-1: #1c1c1e;
+  --cat-2: #3a3a3c;
+  --cat-3: #545458;
+  --cat-4: #6c6c70;
+  --cat-5: #8e8e93;
+  --grid: rgba(0, 0, 0, 0.08);
 }
 
 @theme inline {
@@ -52,6 +65,12 @@
   --color-warning: var(--warning);
   --color-scope-pj: var(--scope-pj);
   --color-badge: var(--badge);
+  --color-cat-1: var(--cat-1);
+  --color-cat-2: var(--cat-2);
+  --color-cat-3: var(--cat-3);
+  --color-cat-4: var(--cat-4);
+  --color-cat-5: var(--cat-5);
+  --color-grid: var(--grid);
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --radius-card: 16px;
   --radius-button: 12px;
@@ -62,5 +81,30 @@ body {
   background: var(--bg);
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  font-feature-settings: "cv11" 1;
   -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Caixa do negócio: roxo listrado, para não depender só de tom para separar de "Reservado". */
+.texture-business {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--scope-pj) 0 3px,
+    color-mix(in srgb, var(--scope-pj) 45%, var(--bg)) 3px 6px
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

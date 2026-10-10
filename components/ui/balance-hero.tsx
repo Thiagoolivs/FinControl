@@ -16,7 +16,10 @@ type BalanceHeroProps = {
   status?: ViewStatus;
   /** Barra de composição (direção C) logo abaixo do número. */
   composition?: ReactNode;
+  emptyTitle?: string;
+  emptyDescription?: string;
   emptyAction?: ReactNode;
+  errorDescription?: string;
   errorAction?: ReactNode;
 };
 
@@ -27,7 +30,10 @@ export function BalanceHero({
   caption,
   status = "ready",
   composition,
+  emptyTitle = "Nenhuma conta conectada.",
+  emptyDescription = "Conecte um banco pelo Open Finance para ver o saldo aqui.",
   emptyAction,
+  errorDescription = "As contas não responderam na última sincronização.",
   errorAction,
 }: BalanceHeroProps) {
   return (
@@ -45,7 +51,7 @@ export function BalanceHero({
       ) : status === "error" ? (
         <ErrorState
           title="Não foi possível calcular o saldo."
-          description="As contas não responderam na última sincronização."
+          description={errorDescription}
           action={errorAction}
         />
       ) : status === "empty" ? (
@@ -55,8 +61,8 @@ export function BalanceHero({
           </p>
           <EmptyState
             compact
-            title="Nenhuma conta conectada."
-            description="Conecte um banco pelo Open Finance para ver o saldo aqui."
+            title={emptyTitle}
+            description={emptyDescription}
             action={emptyAction}
           />
         </>

@@ -104,7 +104,7 @@ export const SCOPES: Record<ScopeFilter, ScopeFixture> = {
 };
 
 export const GOALS = [
-  { name: "Casamento", scope: "PF", currentCents: 1_900_000, targetCents: 5_000_000, monthlyRequiredCents: 221_429, targetDateLabel: "dez 2027", status: "on-track" },
+  { name: "Casamento", scope: "PF", currentCents: 1_900_000, targetCents: 5_000_000, monthlyRequiredCents: 221_500, targetDateLabel: "dez 2027", status: "on-track" },
   { name: "Carro", scope: "PF", currentCents: 840_000, targetCents: 6_000_000, monthlyRequiredCents: 258_000, targetDateLabel: "jun 2028", status: "late", realisticDateLabel: "mar 2029" },
   { name: "Investimentos", scope: "PF", currentCents: 2_350_000, targetCents: 10_000_000, monthlyRequiredCents: 153_000, targetDateLabel: "dez 2030", status: "on-track" },
   { name: "Eu mesmo", scope: "PF", currentCents: 500_000, targetCents: 500_000, monthlyRequiredCents: 0, targetDateLabel: "dez 2026", status: "done" },

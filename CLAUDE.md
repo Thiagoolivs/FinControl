@@ -29,12 +29,17 @@ Deploy no Railway: passo a passo no `README.md`. `instrumentation.ts` valida as 
 
 ```
 app/              rotas (App Router); textos de UI em pt-BR
+  (app)/          telas autenticadas com tab bar (Hoje, Config, …); actions.ts = server actions de conexão e sync
   api/            route handlers (health, cron/*)
   dev/components/ catálogo do design system com todos os estados (dados fictícios em fixtures.ts)
 components/ui/    design system: um arquivo por componente; estado de dados via ViewStatus
 lib/
   auth/           senha, TOTP, sessão, criptografia
   finance/        todo cálculo financeiro — sempre com teste ao lado (*.test.ts)
+  pluggy/         cliente HTTP (fetch + zod) e normalize.ts (vocabulário da Pluggy → nosso; puro, testado)
+  sync/           leitura das conexões: ingestão, pareamento de transferências, alertas de conexão
+  queries/        consultas das telas; scope.ts = filtro PF/PJ/consolidado
+  dates.ts        datas de calendário em America/Sao_Paulo
   categorization/ matcher de regras e validação do rascunho de regra
   charts/         escalas de gráfico
   security/       rate limit
@@ -54,6 +59,10 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Toda query filtra por `userId` na própria query (coluna direta). Nunca no cliente.
 - Nenhuma query soma PF e PJ sem o chamador passar `consolidated: true`.
 - Transferência entre contas próprias e pagamento de fatura não são despesa.
+- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`).
+- Pluggy: conta bancária mantém o sinal; cartão vem com compra positiva e é invertido na ingestão. Dedup por `pluggyTransactionId`; PENDING que some da janela lida é removida.
+- Transferência = par saída/entrada de mesmo valor em contas diferentes, até 3 dias (`lib/finance/transfers.ts`); as duas pernas apontam uma para a outra (`transferPeerId`) e recebem a categoria de sistema `TRANSFERENCIA`. Saída de cartão nunca é perna.
+- Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.
 - Módulos que tocam sessão ou dados importam `server-only`. Módulos puros (`lib/auth/password.ts`, `totp.ts`, `crypto.ts`, `lib/finance/*`) não, para os scripts conseguirem usá-los.

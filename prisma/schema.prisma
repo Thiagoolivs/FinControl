@@ -40,7 +40,8 @@ enum ConnectionStatus {
 
 enum SyncTrigger {
   CRON
-  MANUAL
+  MANUAL // botão "Atualizar": só este conta para o cooldown de 6h
+  CONEXAO // primeira leitura logo depois de conectar
 }
 
 enum SyncStatus {
@@ -245,7 +246,7 @@ model Connection {
   institutionLogo  String?
   status           ConnectionStatus
   statusDetail     String? // executionStatus / mensagem de erro da Pluggy
-  lastSyncAt       DateTime?
+  lastSyncAt       DateTime? // quando a Pluggy leu o banco pela última vez (item.lastUpdatedAt)
   consentExpiresAt DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
@@ -285,7 +286,7 @@ model Account {
   type                 AccountType
   name                 String
   number               String? // mascarado, como vem da Pluggy
-  balanceCents         Int // CREDIT: valor devido na fatura aberta, positivo
+  balanceCents         Int // CREDIT: limite usado (balance da Pluggy), positivo; inclui parcelas futuras
   currency             String      @default("BRL")
   creditLimitCents     Int?
   availableCreditCents Int?

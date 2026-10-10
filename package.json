@@ -14,7 +14,8 @@
     "test": "vitest run",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "user:create": "tsx scripts/create-user.ts"
+    "user:create": "tsx scripts/create-user.ts",
+    "cron": "tsx scripts/cron.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",
@@ -22,6 +23,7 @@
     "@prisma/client": "7.10.0",
     "next": "16.4.0",
     "otpauth": "^9.5.2",
+    "pluggy-connect-sdk": "2.14.2",
     "prisma": "7.10.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",

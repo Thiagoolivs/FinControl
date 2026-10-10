@@ -74,3 +74,26 @@ export function parseCents(input: string): number | null {
   if (!Number.isSafeInteger(cents)) return null;
   return negative ? -cents : cents;
 }
+
+/**
+ * Valor decimal de API (45.9, -1234.5) → centavos, sem aritmética de float: lê a representação decimal
+ * do número e arredonda meio centavo para longe do zero (1.005 → 101, -0.125 → -13).
+ */
+export function decimalToCents(value: number): number {
+  const match = Number.isFinite(value) ? /^(\d+)(?:\.(\d+))?(?:e([+-]\d+))?$/.exec(Math.abs(value).toString()) : null;
+  if (!match) throw new RangeError(`Valor decimal inválido: ${value}`);
+  const digits = BigInt(`${match[1]}${match[2] ?? ""}`);
+  const extraPlaces = (match[2]?.length ?? 0) - Number(match[3] ?? 0) - 2;
+  const ten = BigInt(10);
+  let cents: bigint;
+  if (extraPlaces <= 0) {
+    cents = digits * ten ** BigInt(-extraPlaces);
+  } else {
+    const divisor = ten ** BigInt(extraPlaces);
+    const remainder = digits % divisor;
+    cents = digits / divisor + (remainder + remainder >= divisor ? BigInt(1) : BigInt(0));
+  }
+  const result = value < 0 ? -Number(cents) : Number(cents);
+  if (!Number.isSafeInteger(result)) throw new RangeError(`Valor fora do intervalo seguro: ${value}`);
+  return result === 0 ? 0 : result;
+}

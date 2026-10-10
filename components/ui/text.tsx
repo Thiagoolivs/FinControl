@@ -10,7 +10,7 @@ export function Eyebrow({
   id,
 }: {
   children: ReactNode;
-  as?: "span" | "h2" | "h3" | "p";
+  as?: "span" | "h1" | "h2" | "h3" | "p";
   className?: string;
   id?: string;
 }) {

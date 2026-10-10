@@ -10,6 +10,8 @@ const schema = z.object({
   CRON_SECRET: z.string().min(32).optional(),
   PLUGGY_CLIENT_ID: z.string().optional(),
   PLUGGY_CLIENT_SECRET: z.string().optional(),
+  // Só para testes locais contra um servidor falso; em produção fica vazia.
+  PLUGGY_API_URL: z.url().optional(),
   GEMINI_API_KEY: z.string().optional(),
   BRAPI_TOKEN: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().optional(),

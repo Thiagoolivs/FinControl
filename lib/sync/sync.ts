@@ -1,0 +1,215 @@
+import "server-only";
+import type { ConnectionStatus, Scope, SyncTrigger } from "@/generated/prisma/enums";
+import { addDays, todayLocal } from "@/lib/dates";
+import { db } from "@/lib/db";
+import { TRANSFER_WINDOW_DAYS } from "@/lib/finance/transfers";
+import { fetchAccounts, fetchBills, fetchConsent, fetchItem, fetchTransactions, type PluggyItem } from "@/lib/pluggy/client";
+import { toConnectionStatus } from "@/lib/pluggy/normalize";
+import { raiseConnectionAlerts } from "./alerts";
+import { ingestTransactions, upsertAccount, upsertBills } from "./ingest";
+import { detectTransfers } from "./transfers";
+
+/** Cooldown do botão "Atualizar" (só gatilho MANUAL conta). */
+export const MANUAL_REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+// Sync parado há mais que isso é considerado morto (processo reiniciou no meio).
+const STALE_RUN_MS = 15 * 60 * 1000;
+// Leituras seguintes cobrem esta janela: pendentes que viram lançamento e lançamentos que chegam atrasados.
+const INCREMENTAL_WINDOW_DAYS = 60;
+
+export type SyncStats = { contas: number; novas: number; atualizadas: number; removidas: number; faturas: number; avisos: string[] };
+
+export type ConnectionOutcome =
+  | { connectionId: string; institutionName: string; ok: true; stats: SyncStats }
+  | { connectionId: string; institutionName: string; ok: false; error: string };
+
+export type UserSyncResult =
+  | { status: "busy" }
+  | { status: "done"; outcomes: ConnectionOutcome[]; transferencias: number };
+
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+type ConnectionRow = {
+  id: string;
+  userId: string;
+  scope: Scope;
+  pluggyItemId: string;
+  institutionName: string;
+  status: ConnectionStatus;
+};
+
+/** Estado do item na Pluggy (status, consentimento) aplicado à conexão. */
+async function refreshConnectionState(connection: ConnectionRow, previousStatus: ConnectionStatus | null, item: PluggyItem) {
+  let consentExpiresAt = item.consentExpiresAt ? new Date(item.consentExpiresAt) : null;
+  let revoked = false;
+  try {
+    const consent = await fetchConsent(connection.pluggyItemId);
+    revoked = Boolean(consent?.revokedAt);
+    if (!consentExpiresAt && consent?.expiresAt) consentExpiresAt = new Date(consent.expiresAt);
+  } catch {
+    // Nem todo conector expõe /consents; o item já traz o vencimento quando existe.
+  }
+  const status: ConnectionStatus = revoked ? "LOGIN_ERROR" : toConnectionStatus(item.status);
+  const statusDetail = revoked
+    ? "O consentimento foi revogado no banco."
+    : (item.error?.message ?? (status === "UPDATED" ? null : (item.executionStatus ?? null)));
+
+  await db().connection.update({
+    where: { id: connection.id, userId: connection.userId },
+    data: {
+      status,
+      statusDetail,
+      connectorId: item.connector.id,
+      institutionName: item.connector.name,
+      institutionLogo: item.connector.imageUrl ?? null,
+      consentExpiresAt,
+      ...(item.lastUpdatedAt ? { lastSyncAt: new Date(item.lastUpdatedAt) } : {}),
+    },
+  });
+  await raiseConnectionAlerts({
+    userId: connection.userId,
+    connectionId: connection.id,
+    scope: connection.scope,
+    institutionName: item.connector.name,
+    previousStatus,
+    status,
+    statusDetail,
+    consentExpiresAt,
+  });
+}
+
+/** Lê item, contas, transações e faturas de uma conexão. Ler não dispara atualização no banco: não gasta cota. */
+async function syncConnection(
+  connection: ConnectionRow,
+  trigger: SyncTrigger,
+  previousStatus: ConnectionStatus | null,
+): Promise<{ outcome: ConnectionOutcome; fullHistory: boolean }> {
+  const run = await db().syncRun.create({
+    data: { userId: connection.userId, connectionId: connection.id, trigger, status: "EM_ANDAMENTO" },
+    select: { id: true },
+  });
+  const hadSuccess = await db().syncRun.findFirst({
+    where: { connectionId: connection.id, status: "SUCESSO" },
+    select: { id: true },
+  });
+  const dateFrom = hadSuccess ? addDays(todayLocal(), -INCREMENTAL_WINDOW_DAYS) : null;
+  try {
+    const item = await fetchItem(connection.pluggyItemId);
+    await refreshConnectionState(connection, previousStatus, item);
+
+    const stats: SyncStats = { contas: 0, novas: 0, atualizadas: 0, removidas: 0, faturas: 0, avisos: [] };
+    for (const wire of await fetchAccounts(connection.pluggyItemId)) {
+      const account = await upsertAccount(connection, wire);
+      if (!account) continue;
+      stats.contas += 1;
+      const transactions = await fetchTransactions(wire.id, dateFrom ?? undefined);
+      const ingested = await ingestTransactions({ ...account, pluggyAccountId: wire.id }, transactions, dateFrom);
+      stats.novas += ingested.novas;
+      stats.atualizadas += ingested.atualizadas;
+      stats.removidas += ingested.removidas;
+      if (account.type === "CREDIT") {
+        try {
+          stats.faturas += await upsertBills(account, await fetchBills(wire.id));
+        } catch (error) {
+          stats.avisos.push(`Faturas de ${wire.name}: ${message(error)}`);
+        }
+      }
+    }
+    await db().syncRun.update({
+      where: { id: run.id },
+      data: { status: "SUCESSO", finishedAt: new Date(), stats },
+    });
+    return {
+      outcome: { connectionId: connection.id, institutionName: item.connector.name, ok: true, stats },
+      fullHistory: dateFrom === null,
+    };
+  } catch (error) {
+    const text = message(error);
+    await db().syncRun.update({ where: { id: run.id }, data: { status: "ERRO", finishedAt: new Date(), error: text } });
+    return {
+      outcome: { connectionId: connection.id, institutionName: connection.institutionName, ok: false, error: text },
+      fullHistory: false,
+    };
+  }
+}
+
+/**
+ * Sincroniza as conexões do usuário (ou só uma) e depois pareia transferências entre todas as contas dele,
+ * porque uma transferência costuma atravessar duas conexões.
+ */
+export async function syncUser(
+  userId: string,
+  trigger: SyncTrigger,
+  options: { connectionId?: string; isNewConnection?: boolean } = {},
+): Promise<UserSyncResult> {
+  const staleBefore = new Date(Date.now() - STALE_RUN_MS);
+  await db().syncRun.updateMany({
+    where: { userId, status: "EM_ANDAMENTO", startedAt: { lte: staleBefore } },
+    data: { status: "ERRO", finishedAt: new Date(), error: "Interrompido antes de terminar." },
+  });
+  const running = await db().syncRun.findFirst({
+    where: { userId, status: "EM_ANDAMENTO", startedAt: { gt: staleBefore } },
+    select: { id: true },
+  });
+  if (running) return { status: "busy" };
+
+  const connections = await db().connection.findMany({
+    where: { userId, ...(options.connectionId ? { id: options.connectionId } : {}) },
+    select: { id: true, userId: true, scope: true, pluggyItemId: true, institutionName: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const outcomes: ConnectionOutcome[] = [];
+  let fullHistory = false;
+  for (const connection of connections) {
+    const previous = options.isNewConnection ? null : connection.status;
+    const result = await syncConnection(connection, trigger, previous);
+    outcomes.push(result.outcome);
+    fullHistory ||= result.fullHistory;
+  }
+  const from = fullHistory ? null : addDays(todayLocal(), -(INCREMENTAL_WINDOW_DAYS + TRANSFER_WINDOW_DAYS));
+  const transferencias = outcomes.some((outcome) => outcome.ok) ? await detectTransfers(userId, from) : 0;
+  return { status: "done", outcomes, transferencias };
+}
+
+/** Quando o botão "Atualizar" volta a ficar disponível (null = já está). */
+export async function manualRefreshAvailableAt(userId: string, now: Date = new Date()): Promise<Date | null> {
+  const last = await db().syncRun.findFirst({
+    where: { userId, trigger: "MANUAL" },
+    orderBy: { startedAt: "desc" },
+    select: { startedAt: true },
+  });
+  if (!last) return null;
+  const availableAt = new Date(last.startedAt.getTime() + MANUAL_REFRESH_COOLDOWN_MS);
+  return availableAt > now ? availableAt : null;
+}
+
+export class ConnectionOwnershipError extends Error {}
+
+/**
+ * Registra um item da Pluggy como conexão do usuário. Item já registrado é reaproveitado (reconexão),
+ * nunca duplicado: o pluggyItemId é único.
+ */
+export async function registerConnection(
+  userId: string,
+  itemId: string,
+  scope: Scope,
+): Promise<{ connectionId: string; created: boolean }> {
+  const item = await fetchItem(itemId);
+  const existing = await db().connection.findUnique({ where: { pluggyItemId: item.id }, select: { id: true, userId: true } });
+  if (existing && existing.userId !== userId) throw new ConnectionOwnershipError("Este item já está ligado a outro usuário.");
+  if (existing) return { connectionId: existing.id, created: false };
+  const created = await db().connection.create({
+    data: {
+      userId,
+      scope,
+      pluggyItemId: item.id,
+      connectorId: item.connector.id,
+      institutionName: item.connector.name,
+      institutionLogo: item.connector.imageUrl ?? null,
+      status: "CREATED",
+    },
+    select: { id: true },
+  });
+  return { connectionId: created.id, created: true };
+}

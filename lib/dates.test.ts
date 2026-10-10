@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, daysBetween, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
+import { addDays, daysBetween, formatDayLabel, formatElapsed, formatMoment, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
 
 describe("localDateOf", () => {
   it("usa o dia de São Paulo, não o de UTC", () => {
@@ -34,5 +34,29 @@ describe("aritmética de datas", () => {
 
   it("ida e volta pelo banco preserva o dia", () => {
     expect(fromDbDate(toDbDate("2026-10-08"))).toBe("2026-10-08");
+  });
+});
+
+describe("formatação", () => {
+  it("rotula dias de transação", () => {
+    expect(formatDayLabel("2026-10-10", "2026-10-10")).toBe("Hoje");
+    expect(formatDayLabel("2026-10-09", "2026-10-10")).toBe("Ontem");
+    expect(formatDayLabel("2026-10-08", "2026-10-10")).toBe("8 de outubro");
+    expect(formatDayLabel("2025-12-30", "2026-01-02")).toBe("30 de dezembro de 2025");
+  });
+
+  it("mostra tempo decorrido", () => {
+    const now = new Date("2026-10-10T15:00:00Z");
+    expect(formatElapsed(new Date("2026-10-10T14:59:30Z"), now)).toBe("agora");
+    expect(formatElapsed(new Date("2026-10-10T14:48:00Z"), now)).toBe("há 12 min");
+    expect(formatElapsed(new Date("2026-10-10T12:00:00Z"), now)).toBe("há 3 h");
+    expect(formatElapsed(new Date("2026-10-09T15:00:00Z"), now)).toBe("há 1 dia");
+  });
+
+  it("mostra horário em São Paulo", () => {
+    const now = new Date("2026-10-10T15:00:00Z");
+    expect(formatMoment(new Date("2026-10-10T20:30:00Z"), now)).toBe("hoje às 17:30");
+    expect(formatMoment(new Date("2026-10-11T11:15:00Z"), now)).toBe("amanhã às 08:15");
+    expect(formatMoment(new Date("2026-10-12T11:15:00Z"), now)).toBe("12 de outubro às 08:15");
   });
 });

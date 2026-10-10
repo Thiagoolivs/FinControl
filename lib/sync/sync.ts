@@ -172,10 +172,10 @@ export async function syncUser(
   return { status: "done", outcomes, transferencias };
 }
 
-/** Quando o botão "Atualizar" volta a ficar disponível (null = já está). */
+/** Quando o botão "Atualizar" volta a ficar disponível (null = já está). Leitura que falhou não conta. */
 export async function manualRefreshAvailableAt(userId: string, now: Date = new Date()): Promise<Date | null> {
   const last = await db().syncRun.findFirst({
-    where: { userId, trigger: "MANUAL" },
+    where: { userId, trigger: "MANUAL", status: "SUCESSO" },
     orderBy: { startedAt: "desc" },
     select: { startedAt: true },
   });

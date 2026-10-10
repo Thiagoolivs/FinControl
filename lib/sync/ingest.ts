@@ -1,6 +1,6 @@
 import "server-only";
 import type { AccountType, Scope, TransactionStatus } from "@/generated/prisma/enums";
-import { fromDbDate, toDbDate } from "@/lib/dates";
+import { addDays, fromDbDate, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { decimalToCents } from "@/lib/finance/money";
 import type { PluggyAccount, PluggyBill, PluggyTransaction } from "@/lib/pluggy/client";
@@ -171,7 +171,8 @@ async function applyRows(account: LocalAccount, rows: readonly Row[], dateFrom: 
       userId: account.userId,
       accountId: account.id,
       status: "PENDING",
-      ...(dateFrom ? { date: { gte: toDbDate(dateFrom) } } : {}),
+      // Um dia de folga na borda: o filtro da Pluggy é em UTC e o nosso dia é o de São Paulo.
+      ...(dateFrom ? { date: { gte: toDbDate(addDays(dateFrom, 1)) } } : {}),
     },
     select: { id: true, pluggyTransactionId: true },
   });

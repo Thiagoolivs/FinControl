@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCents, centsParts, formatCents, formatCentsCompact, parseCents } from "./money";
+import { assertCents, centsParts, decimalToCents, formatCents, formatCentsCompact, parseCents } from "./money";
 
 describe("assertCents", () => {
   it("aceita inteiros seguros", () => {
@@ -99,5 +99,39 @@ describe("formatCentsCompact", () => {
     [-500000, "−R$ 5 mil"],
   ])("%i → %s", (cents, expected) => {
     expect(formatCentsCompact(cents)).toBe(expected);
+  });
+});
+
+describe("decimalToCents", () => {
+  it("converte valores de API em centavos", () => {
+    expect(decimalToCents(45.9)).toBe(4590);
+    expect(decimalToCents(-45.9)).toBe(-4590);
+    expect(decimalToCents(1234)).toBe(123400);
+    expect(decimalToCents(0.29)).toBe(29);
+  });
+
+  it("não herda erro de float", () => {
+    expect(decimalToCents(0.1 + 0.2)).toBe(30);
+    expect(decimalToCents(1.005)).toBe(101);
+    expect(decimalToCents(-1.005)).toBe(-101);
+  });
+
+  it("arredonda meio centavo para longe do zero", () => {
+    expect(decimalToCents(0.125)).toBe(13);
+    expect(decimalToCents(-0.125)).toBe(-13);
+    expect(decimalToCents(123456.784)).toBe(12345678);
+  });
+
+  it("lida com notação exponencial e zero negativo", () => {
+    expect(decimalToCents(1e-7)).toBe(0);
+    expect(decimalToCents(1.5e3)).toBe(150000);
+    expect(Object.is(decimalToCents(-0), 0)).toBe(true);
+    expect(Object.is(decimalToCents(-0.001), 0)).toBe(true);
+  });
+
+  it("rejeita valores não finitos ou fora do intervalo seguro", () => {
+    expect(() => decimalToCents(Number.NaN)).toThrow(RangeError);
+    expect(() => decimalToCents(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+    expect(() => decimalToCents(1e21)).toThrow(RangeError);
   });
 });

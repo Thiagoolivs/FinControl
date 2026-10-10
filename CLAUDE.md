@@ -9,7 +9,7 @@ PWA pessoal de finanças (PF + PJ/MEI) alimentado por Open Finance (Pluggy), com
 - **Next.js 16** (App Router, TypeScript estrito). `proxy.ts` substitui `middleware.ts`; `cookies()`/`headers()` são assíncronos. A documentação da versão instalada está em `node_modules/next/dist/docs/` — leia antes de usar API nova.
 - **PostgreSQL** (Railway) + **Prisma 7**: config em `prisma.config.ts`, client gerado em `generated/prisma` (não versionado), driver adapter `@prisma/adapter-pg`.
 - **Tailwind CSS 4** + design system próprio (tokens abaixo).
-- **Auth própria**: Argon2id + TOTP obrigatório + sessão em cookie httpOnly (tabela `Session`, token só como hash).
+- **Auth própria**: usuário e senha (Argon2id) definidos em `LOGIN_USERNAME`/`LOGIN_PASSWORD` e sincronizados no boot; TOTP obrigatório, cadastrado no primeiro login (`/login/2fa/configurar`); sessão em cookie httpOnly (tabela `Session`, token só como hash).
 - Fases futuras: Pluggy, Gemini (`@google/generative-ai`, function calling), brapi.dev, SGS/BCB, `web-push`.
 - **Vitest** para testes. **Railway** (Railpack) para deploy; jobs pelo Railway Cron chamando route handlers protegidos por `CRON_SECRET`.
 
@@ -20,10 +20,10 @@ npm run dev                          # desenvolvimento
 npm run build && npm start           # produção (start roda prisma migrate deploy antes)
 npm run lint && npm run typecheck && npm test
 npm run db:migrate -- --name <nome>  # nova migration
-npm run user:create                  # cria usuário + ativa TOTP (interativo)
+npm run user:create                  # alternativa: usuário por e-mail com TOTP pelo terminal
 ```
 
-Deploy no Railway: passo a passo no `README.md`. `instrumentation.ts` valida as variáveis no boot e encerra o processo se faltar alguma.
+Deploy no Railway: passo a passo no `README.md`. `instrumentation.ts` valida as variáveis no boot (encerra o processo se faltar alguma) e sincroniza o usuário de `LOGIN_USERNAME`.
 
 ## Estrutura
 

@@ -54,6 +54,7 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Toda query filtra por `userId` na própria query (coluna direta). Nunca no cliente.
 - Nenhuma query soma PF e PJ sem o chamador passar `consolidated: true`.
 - Transferência entre contas próprias e pagamento de fatura não são despesa.
+- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`).
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.
 - Módulos que tocam sessão ou dados importam `server-only`. Módulos puros (`lib/auth/password.ts`, `totp.ts`, `crypto.ts`, `lib/finance/*`) não, para os scripts conseguirem usá-los.

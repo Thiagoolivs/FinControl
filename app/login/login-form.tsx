@@ -16,13 +16,16 @@ export function LoginForm() {
   return (
     <form action={formAction} className="flex flex-col gap-6">
       <label className="flex flex-col gap-2">
-        <span className={labelClass}>E-mail</span>
+        <span className={labelClass}>Usuário</span>
         <input
-          name="email"
-          type="email"
+          name="login"
+          type="text"
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           required
-          defaultValue={state.email}
+          defaultValue={state.login}
           className={inputClass}
         />
       </label>

@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { readSession } from "@/lib/auth/session";
+import { db } from "@/lib/db";
 import { TotpForm } from "./totp-form";
 
 export default async function TwoFactorPage() {
   const session = await readSession();
   if (session.status === "authenticated") redirect("/");
   if (session.status === "none") redirect("/login");
+  const user = await db().user.findUnique({ where: { id: session.userId }, select: { totpEnabledAt: true } });
+  if (!user?.totpEnabledAt) redirect("/login/2fa/configurar");
 
   return (
     <main className="mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center gap-10 px-5 py-16">

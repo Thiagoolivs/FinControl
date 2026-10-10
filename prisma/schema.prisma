@@ -180,7 +180,8 @@ enum AuditOrigin {
 
 model User {
   id            String    @id @default(cuid())
-  email         String    @unique
+  username      String?   @unique // vem de LOGIN_USERNAME (sincronizado no boot)
+  email         String?   @unique
   passwordHash  String // argon2id
   totpSecretEnc String? // AES-256-GCM, chave derivada de AUTH_SECRET
   totpEnabledAt DateTime? // null = só acessa a tela de setup do 2FA

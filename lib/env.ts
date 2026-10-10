@@ -2,8 +2,11 @@ import { z } from "zod";
 
 // Lido sob demanda: o build não pode falhar por falta de variável que só o runtime usa.
 const schema = z.object({
-  DATABASE_URL: z.string().min(1),
-  AUTH_SECRET: z.string().min(32, "AUTH_SECRET precisa de pelo menos 32 caracteres"),
+  DATABASE_URL: z.string({ error: "não definida" }).min(1, "não definida"),
+  AUTH_SECRET: z.string({ error: "não definida" }).min(32, "precisa de pelo menos 32 caracteres"),
+  // Usuário de acesso, criado/atualizado no boot. O 2FA é configurado no primeiro login.
+  LOGIN_USERNAME: z.string().trim().toLowerCase().min(3, "precisa de pelo menos 3 caracteres").optional(),
+  LOGIN_PASSWORD: z.string().min(8, "precisa de pelo menos 8 caracteres").optional(),
   CRON_SECRET: z.string().min(32).optional(),
   PLUGGY_CLIENT_ID: z.string().optional(),
   PLUGGY_CLIENT_SECRET: z.string().optional(),
@@ -12,6 +15,9 @@ const schema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().optional(),
+}).refine((env) => Boolean(env.LOGIN_USERNAME) === Boolean(env.LOGIN_PASSWORD), {
+  message: "defina LOGIN_USERNAME e LOGIN_PASSWORD juntas",
+  path: ["LOGIN_PASSWORD"],
 });
 
 export type ServerEnv = z.infer<typeof schema>;

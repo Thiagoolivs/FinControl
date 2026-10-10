@@ -4,7 +4,7 @@ import { cache } from "react";
 import { readSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 
-export type CurrentUser = { id: string; email: string; name: string | null };
+export type CurrentUser = { id: string; username: string | null; email: string | null; name: string | null };
 
 /** Única porta de entrada para "quem é o usuário". Redireciona se não houver sessão completa. */
 export const requireUser = cache(async (): Promise<CurrentUser> => {
@@ -13,7 +13,7 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
   if (session.status === "none") redirect("/login");
   const user = await db().user.findUnique({
     where: { id: session.userId },
-    select: { id: true, email: true, name: true },
+    select: { id: true, username: true, email: true, name: true },
   });
   if (!user) redirect("/login");
   return user;

@@ -1,4 +1,4 @@
 export type FormState = {
   error?: string;
-  email?: string;
+  login?: string;
 };

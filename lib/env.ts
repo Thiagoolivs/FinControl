@@ -2,8 +2,8 @@ import { z } from "zod";
 
 // Lido sob demanda: o build não pode falhar por falta de variável que só o runtime usa.
 const schema = z.object({
-  DATABASE_URL: z.string().min(1),
-  AUTH_SECRET: z.string().min(32, "AUTH_SECRET precisa de pelo menos 32 caracteres"),
+  DATABASE_URL: z.string({ error: "não definida" }).min(1, "não definida"),
+  AUTH_SECRET: z.string({ error: "não definida" }).min(32, "precisa de pelo menos 32 caracteres"),
   CRON_SECRET: z.string().min(32).optional(),
   PLUGGY_CLIENT_ID: z.string().optional(),
   PLUGGY_CLIENT_SECRET: z.string().optional(),

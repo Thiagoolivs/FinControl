@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCents, centsParts, formatCents, parseCents } from "./money";
+import { assertCents, centsParts, formatCents, formatCentsCompact, parseCents } from "./money";
 
 describe("assertCents", () => {
   it("aceita inteiros seguros", () => {
@@ -40,6 +40,12 @@ describe("formatCents", () => {
   it("omite o símbolo quando pedido", () => {
     expect(formatCents(1430580, { symbol: false })).toBe("14.305,80");
   });
+
+  it("omite centavos zerados só quando pedido", () => {
+    expect(formatCents(1900000, { hideZeroCents: true })).toBe("R$ 19.000");
+    expect(formatCents(1900050, { hideZeroCents: true })).toBe("R$ 19.000,50");
+    expect(formatCents(1900000)).toBe("R$ 19.000,00");
+  });
 });
 
 describe("centsParts", () => {
@@ -73,5 +79,25 @@ describe("parseCents", () => {
     for (const cents of [0, 1, 99, 8650, 1430580, -5890, 123456789]) {
       expect(parseCents(formatCents(cents))).toBe(cents);
     }
+  });
+});
+
+describe("formatCentsCompact", () => {
+  it.each([
+    [0, "R$ 0"],
+    [85000, "R$ 850"],
+    [99999, "R$ 999"],
+    [100000, "R$ 1 mil"],
+    [150000, "R$ 1,5 mil"],
+    [965000, "R$ 9,7 mil"],
+    [1286550, "R$ 13 mil"],
+    [2000000, "R$ 20 mil"],
+    [99940000, "R$ 999 mil"],
+    [99995000, "R$ 1 mi"],
+    [120000000, "R$ 1,2 mi"],
+    [1500000000, "R$ 15 mi"],
+    [-500000, "−R$ 5 mil"],
+  ])("%i → %s", (cents, expected) => {
+    expect(formatCentsCompact(cents)).toBe(expected);
   });
 });

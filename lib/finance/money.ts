@@ -27,14 +27,36 @@ export function centsParts(cents: number, options: { signed?: boolean } = {}): C
   return { sign, units: groupThousands(units), cents: String(rest).padStart(2, "0") };
 }
 
-/** 1430580 → "R$ 14.305,80"; -5890 → "−R$ 58,90". */
-export function formatCents(cents: number, options: { signed?: boolean; symbol?: boolean } = {}): string {
+/** 1430580 → "R$ 14.305,80"; -5890 → "−R$ 58,90". `hideZeroCents`: 1900000 → "R$ 19.000". */
+export function formatCents(
+  cents: number,
+  options: { signed?: boolean; symbol?: boolean; hideZeroCents?: boolean } = {},
+): string {
   const { sign, units, cents: rest } = centsParts(cents, options);
   const symbol = options.symbol === false ? "" : "R$ ";
-  return `${sign}${symbol}${units},${rest}`;
+  const fraction = options.hideZeroCents && rest === "00" ? "" : `,${rest}`;
+  return `${sign}${symbol}${units}${fraction}`;
 }
 
-const BRL_PATTERN = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/;
+/** Para eixos e rótulos curtos: 2000000 → "R$ 20 mil"; 150000 → "R$ 1,5 mil"; 120000000 → "R$ 1,2 mi". */
+export function formatCentsCompact(cents: number): string {
+  assertCents(cents);
+  const sign = cents < 0 ? MINUS : "";
+  const abs = Math.abs(cents);
+  const units = (abs - (abs % 100)) / 100;
+  const scaled = (divisor: number, suffix: string): string => {
+    const tenths = Math.round((units * 10) / divisor);
+    const whole = Math.floor(tenths / 10);
+    const decimal = tenths % 10;
+    const body = whole >= 10 || decimal === 0 ? groupThousands(Math.round(tenths / 10)) : `${whole},${decimal}`;
+    return `${sign}R$ ${body} ${suffix}`;
+  };
+  if (units >= 999_950) return scaled(1_000_000, "mi");
+  if (units >= 1000) return scaled(1000, "mil");
+  return `${sign}R$ ${units}`;
+}
+
+const BRL_PATTERN =/^(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?$/;
 
 /** "R$ 1.234,56" → 123456. Retorna null para entrada que não é valor em reais. */
 export function parseCents(input: string): number | null {

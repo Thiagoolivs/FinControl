@@ -30,9 +30,13 @@ Deploy no Railway: passo a passo no `README.md`. `instrumentation.ts` valida as 
 ```
 app/              rotas (App Router); textos de UI em pt-BR
   api/            route handlers (health, cron/*)
+  dev/components/ catálogo do design system com todos os estados (dados fictícios em fixtures.ts)
+components/ui/    design system: um arquivo por componente; estado de dados via ViewStatus
 lib/
   auth/           senha, TOTP, sessão, criptografia
   finance/        todo cálculo financeiro — sempre com teste ao lado (*.test.ts)
+  categorization/ matcher de regras e validação do rascunho de regra
+  charts/         escalas de gráfico
   security/       rate limit
   db.ts           Prisma client
   env.ts          variáveis de ambiente validadas (zod)

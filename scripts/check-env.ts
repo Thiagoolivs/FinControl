@@ -14,6 +14,7 @@ try {
   console.error(`\n✗ ${error instanceof Error ? error.message : String(error)}`);
   console.error("  No Railway: serviço do app → Variables.");
   console.error("    DATABASE_URL = ${{Postgres.DATABASE_URL}}   (o Postgres precisa estar no mesmo projeto)");
-  console.error("    AUTH_SECRET  = saída de: openssl rand -base64 48\n");
+  console.error("    AUTH_SECRET  = saída de: openssl rand -base64 48");
+  console.error("    LOGIN_USERNAME e LOGIN_PASSWORD = seu usuário e senha de acesso (as duas juntas)\n");
   process.exit(1);
 }

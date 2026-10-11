@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Eyebrow } from "@/components/ui/text";
@@ -74,6 +74,7 @@ export function UnpairButton({ transactionId }: { transactionId: string }) {
 export function IgnoreSwitch({ transactionId, ignored }: { transactionId: string; ignored: boolean }) {
   const [state, setState] = useState<ActionState>({});
   const [pending, startTransition] = useTransition();
+  const [on, setOn] = useOptimistic(ignored);
   return (
     <div className="flex flex-col gap-1">
       <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
@@ -85,11 +86,14 @@ export function IgnoreSwitch({ transactionId, ignored }: { transactionId: string
           <input
             type="checkbox"
             role="switch"
-            checked={ignored}
+            checked={on}
             disabled={pending}
             onChange={(event) => {
               const next = event.target.checked;
-              startTransition(async () => setState(await setIgnoredAction({ transactionId, ignored: next })));
+              startTransition(async () => {
+                setOn(next);
+                setState(await setIgnoredAction({ transactionId, ignored: next }));
+              });
             }}
             className="peer sr-only"
           />

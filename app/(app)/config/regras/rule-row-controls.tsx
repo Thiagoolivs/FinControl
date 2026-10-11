@@ -1,12 +1,14 @@
 "use client";
 
-import { useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 import { Icon } from "@/components/ui/icon";
 import { moveRuleAction, toggleRuleAction } from "./actions";
 
 /** Subir/descer prioridade e ligar/desligar sem sair da lista. */
 export function RuleRowControls({ id, active, first, last }: { id: string; active: boolean; first: boolean; last: boolean }) {
   const [pending, startTransition] = useTransition();
+  // O switch muda na hora; o servidor reaplica as regras e a lista volta revalidada.
+  const [on, setOn] = useOptimistic(active);
   const button = "flex size-11 items-center justify-center rounded-full text-text-secondary disabled:opacity-30";
   return (
     <div className={`flex shrink-0 items-center ${pending ? "opacity-60" : ""}`}>
@@ -17,15 +19,18 @@ export function RuleRowControls({ id, active, first, last }: { id: string; activ
         <Icon name="chevron-down" size={16} />
       </button>
       <label className="flex size-11 cursor-pointer items-center justify-center">
-        <span className="sr-only">{active ? "Desativar regra" : "Ativar regra"}</span>
+        <span className="sr-only">{on ? "Desativar regra" : "Ativar regra"}</span>
         <input
           type="checkbox"
           role="switch"
-          checked={active}
+          checked={on}
           disabled={pending}
           onChange={(event) => {
             const next = event.target.checked;
-            startTransition(async () => void (await toggleRuleAction({ id, active: next })));
+            startTransition(async () => {
+              setOn(next);
+              await toggleRuleAction({ id, active: next });
+            });
           }}
           className="size-5 accent-[var(--positive)]"
         />

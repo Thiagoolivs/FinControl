@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AlertBanner } from "@/components/ui/alert-banner";
-import { BalanceHero } from "@/components/ui/balance-hero";
+import { BalanceComposition, BalanceHero } from "@/components/ui/balance-hero";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
 import { RowLink } from "@/components/ui/row-link";
@@ -10,10 +10,10 @@ import { Eyebrow, ScopeTag } from "@/components/ui/text";
 import { TransactionList, type TransactionItemData } from "@/components/ui/transaction-item";
 import { requireUser } from "@/lib/auth/dal";
 import { formatDayLabel, formatElapsed, formatMoment, fromDbDate, todayLocal } from "@/lib/dates";
-import { summarizeBalances } from "@/lib/finance/balance";
+import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
 import { summarizeFlows } from "@/lib/finance/flows";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
-import { getAccounts, getConnections, getRecentTransactions } from "@/lib/queries/overview";
+import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { manualRefreshAvailableAt } from "@/lib/sync/sync";
@@ -31,15 +31,17 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const query = parseScopeParam((await searchParams).escopo);
   const scopeValue: ScopeValue = query.consolidated ? "TUDO" : query.scope;
 
-  const [connections, accounts, transactions, refreshAt, rules] = await Promise.all([
+  const [connections, accounts, buckets, transactions, refreshAt, rules] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
+    getBucketTotals(user.id, query),
     getRecentTransactions(user.id, query, RECENT_DAYS),
     manualRefreshAvailableAt(user.id),
     connectionAlertRules(user.id),
   ]);
 
   const balance = summarizeBalances(accounts);
+  const composition = composeBalance({ grossCents: balance.cashCents, ...buckets });
   const cashAccounts = accounts.filter((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const cards = accounts.filter((account) => account.type === "CREDIT");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
@@ -97,7 +99,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       ) : null}
 
       <BalanceHero
-        amountCents={balance.cashCents}
+        amountCents={composition.availableCents}
         scope={scopeValue}
         status={heroStatus}
         caption={freshest ? `Dados do banco ${formatElapsed(freshest)}` : undefined}
@@ -108,6 +110,16 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
             : "As contas aparecem depois da primeira leitura da Pluggy."
         }
         emptyAction={connections.length === 0 ? connectLink : undefined}
+        composition={
+          <BalanceComposition
+            segments={[
+              { key: "disponivel", label: "Disponível", cents: composition.availableCents },
+              { key: "reservado", label: "Reservado", cents: composition.reservedCents },
+              { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents },
+            ]}
+            total={{ label: "Saldo nas contas", cents: composition.grossCents }}
+          />
+        }
       />
 
       {cashAccounts.length > 0 || cards.length > 0 ? (

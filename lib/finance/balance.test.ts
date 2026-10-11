@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { summarizeBalances, type BalanceAccount } from "./balance";
+import { composeBalance, summarizeBalances, type BalanceAccount } from "./balance";
 
 const account = (type: BalanceAccount["type"], balanceCents: number, extra: Partial<BalanceAccount> = {}): BalanceAccount => ({
   type,
@@ -39,5 +39,28 @@ describe("summarizeBalances", () => {
 
   it("sem contas, tudo zero", () => {
     expect(summarizeBalances([])).toEqual({ cashCents: 0, creditUsedCents: 0, foreignAccounts: 0 });
+  });
+});
+
+describe("composeBalance", () => {
+  it("disponível é o saldo menos reservas e caixa do negócio", () => {
+    expect(composeBalance({ grossCents: 2_184_567, reservedCents: 170_000, businessCashCents: 300_000 })).toEqual({
+      grossCents: 2_184_567,
+      reservedCents: 170_000,
+      businessCashCents: 300_000,
+      availableCents: 1_714_567,
+    });
+  });
+
+  it("sem reservas, disponível = saldo", () => {
+    expect(composeBalance({ grossCents: 100_000, reservedCents: 0, businessCashCents: 0 }).availableCents).toBe(100_000);
+  });
+
+  it("reserva maior que o saldo deixa o disponível negativo", () => {
+    expect(composeBalance({ grossCents: 50_000, reservedCents: 80_000, businessCashCents: 0 }).availableCents).toBe(-30_000);
+  });
+
+  it("rejeita valor que não é centavo inteiro", () => {
+    expect(() => composeBalance({ grossCents: 1.5, reservedCents: 0, businessCashCents: 0 })).toThrow(RangeError);
   });
 });

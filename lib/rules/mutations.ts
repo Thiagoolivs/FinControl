@@ -1,7 +1,9 @@
 import "server-only";
 import type { CategoryKind, MatchType, RuleDirection, RuleOrigin, Scope } from "@/generated/prisma/enums";
 import { compilePattern } from "@/lib/categorization/match";
+import { ruleDestinationError } from "@/lib/categorization/rule-draft";
 import { db } from "@/lib/db";
+import { reallocateIncome, reapplyRulePayments, refreshBucketBalances } from "@/lib/streams/ledger";
 import { unpairTransfers } from "@/lib/sync/transfers";
 import { applyRules, refreshHitCounts } from "./apply";
 
@@ -15,13 +17,42 @@ export type RuleInput = {
   matchType: MatchType;
   direction: RuleDirection;
   scope: Scope | null;
-  categoryId: string;
+  /** Destinos: pelo menos um. Categoria para saídas (e estornos); stream para entradas; bucket paga a saída. */
+  categoryId: string | null;
+  revenueStreamId?: string | null;
+  bucketId?: string | null;
   priority: number;
 };
 
 async function assertCategory(userId: string, categoryId: string): Promise<void> {
   const found = await db().category.findFirst({ where: { id: categoryId, userId }, select: { id: true } });
   if (!found) throw new RuleInputError("Categoria não encontrada.");
+}
+
+async function assertDestinations(userId: string, input: RuleInput): Promise<void> {
+  const message = ruleDestinationError({
+    direction: input.direction,
+    categoryId: input.categoryId ?? "",
+    revenueStreamId: input.revenueStreamId ?? "",
+  });
+  if (message) throw new RuleInputError(message);
+  if (input.categoryId) await assertCategory(userId, input.categoryId);
+  if (input.revenueStreamId && !(await db().revenueStream.findFirst({ where: { id: input.revenueStreamId, userId }, select: { id: true } }))) {
+    throw new RuleInputError("Stream de receita não encontrada.");
+  }
+  if (input.bucketId && !(await db().bucket.findFirst({ where: { id: input.bucketId, userId }, select: { id: true } }))) {
+    throw new RuleInputError("Bucket não encontrado.");
+  }
+}
+
+function normalizeInput(input: RuleInput) {
+  return {
+    ...input,
+    pattern: input.pattern.trim(),
+    // Stream só vale para entrada e bucket só para saída.
+    revenueStreamId: input.direction === "SAIDA" ? null : (input.revenueStreamId ?? null),
+    bucketId: input.direction === "ENTRADA" ? null : (input.bucketId ?? null),
+  };
 }
 
 function assertPattern(input: Pick<RuleInput, "pattern" | "matchType">): void {
@@ -39,10 +70,20 @@ export async function createRule(
   options: { origin: RuleOrigin; applyRetroactively: boolean },
 ): Promise<{ ruleId: string; changed: number }> {
   assertPattern(input);
-  await assertCategory(userId, input.categoryId);
+  const data = normalizeInput(input);
+  await assertDestinations(userId, data);
   // Regra igual já existe (ex.: dois grupos que a IA generalizou para o mesmo padrão): reaproveita.
   const same = await db().rule.findFirst({
-    where: { userId, pattern: input.pattern.trim(), matchType: input.matchType, direction: input.direction, scope: input.scope, categoryId: input.categoryId },
+    where: {
+      userId,
+      pattern: data.pattern,
+      matchType: data.matchType,
+      direction: data.direction,
+      scope: data.scope,
+      categoryId: data.categoryId,
+      revenueStreamId: data.revenueStreamId,
+      bucketId: data.bucketId,
+    },
     select: { id: true },
   });
   if (same) {
@@ -50,7 +91,7 @@ export async function createRule(
     return { ruleId: same.id, changed };
   }
   const rule = await db().rule.create({
-    data: { userId, ...input, pattern: input.pattern.trim(), origin: options.origin },
+    data: { userId, ...data, origin: options.origin },
     select: { id: true },
   });
   await db().auditLog.create({
@@ -59,7 +100,7 @@ export async function createRule(
       action: "rule.create",
       entity: "Rule",
       entityId: rule.id,
-      after: { ...input },
+      after: { ...data },
       origin: options.origin === "IA_CONFIRMADA" ? "AI" : "USER",
     },
   });
@@ -70,9 +111,13 @@ export async function createRule(
 /** Editar refaz tudo que é de regra: o que a regra categoriza passa a ser sempre o que ela diz agora. */
 export async function updateRule(userId: string, ruleId: string, input: RuleInput): Promise<number> {
   assertPattern(input);
-  await assertCategory(userId, input.categoryId);
-  const updated = await db().rule.updateMany({ where: { id: ruleId, userId }, data: { ...input, pattern: input.pattern.trim() } });
+  const data = normalizeInput(input);
+  await assertDestinations(userId, data);
+  const updated = await db().rule.updateMany({ where: { id: ruleId, userId }, data });
   if (updated.count === 0) throw new RuleInputError("Regra não encontrada.");
+  // O bucket da regra pode ter mudado: refaz os pagamentos do que ela já classifica.
+  const classified = await db().transaction.findMany({ where: { userId, ruleId }, select: { id: true } });
+  await reapplyRulePayments(userId, classified.map((row) => row.id));
   return applyRules(userId, "automaticas");
 }
 
@@ -83,12 +128,21 @@ export async function updateRule(userId: string, ruleId: string, input: RuleInpu
 export async function deleteRule(userId: string, ruleId: string, returnToQueue: boolean): Promise<void> {
   const rule = await db().rule.findFirst({ where: { id: ruleId, userId }, select: { id: true } });
   if (!rule) throw new RuleInputError("Regra não encontrada.");
+  const classified = (await db().transaction.findMany({ where: { userId, ruleId }, select: { id: true } })).map((row) => row.id);
   await db().$transaction([
-    ...(returnToQueue ? [db().transaction.updateMany({ where: { userId, ruleId }, data: { ruleId: null, categoryId: null } })] : []),
+    ...(returnToQueue
+      ? [
+          db().transaction.updateMany({ where: { userId, ruleId }, data: { ruleId: null, categoryId: null, revenueStreamId: null } }),
+          db().bucketEntry.deleteMany({ where: { userId, transactionId: { in: classified }, kind: { in: ["ALOCACAO", "PAGAMENTO"] } } }),
+        ]
+      : []),
     db().ruleSuggestion.updateMany({ where: { userId, ruleId }, data: { ruleId: null } }),
     db().rule.delete({ where: { id: ruleId } }),
   ]);
-  if (returnToQueue) await applyRules(userId, "sem-categoria");
+  if (returnToQueue) {
+    await refreshBucketBalances(userId);
+    await applyRules(userId, "sem-categoria");
+  }
 }
 
 export async function setRuleActive(userId: string, ruleId: string, active: boolean): Promise<void> {
@@ -216,11 +270,17 @@ export async function ignoreSuggestion(userId: string, suggestionId: string): Pr
 
 /** Categoria escolhida à mão (null = volta para a fila). Se era perna de transferência, desfaz o par. */
 export async function setTransactionCategory(userId: string, transactionId: string, categoryId: string | null): Promise<void> {
-  const transaction = await db().transaction.findFirst({ where: { id: transactionId, userId }, select: { transferPeerId: true } });
+  const transaction = await db().transaction.findFirst({ where: { id: transactionId, userId }, select: { transferPeerId: true, revenueStreamId: true } });
   if (!transaction) throw new RuleInputError("Transação não encontrada.");
   if (categoryId) await assertCategory(userId, categoryId);
   if (transaction.transferPeerId) await unpairTransfers(userId, [transactionId]);
-  await db().transaction.update({ where: { id: transactionId, userId }, data: { categoryId, ruleId: null } });
+  // Entrada com categoria não é receita: sai da stream e as reservas dela são desfeitas.
+  const leavesStream = categoryId !== null && transaction.revenueStreamId !== null;
+  await db().transaction.update({
+    where: { id: transactionId, userId },
+    data: { categoryId, ruleId: null, ...(leavesStream ? { revenueStreamId: null } : {}) },
+  });
+  if (leavesStream) await reallocateIncome(userId, [transactionId]);
   await refreshHitCounts(userId);
 }
 
@@ -228,6 +288,10 @@ export async function setTransactionCategory(userId: string, transactionId: stri
 export async function setTransactionIgnored(userId: string, transactionId: string, isIgnored: boolean): Promise<void> {
   const updated = await db().transaction.updateMany({ where: { id: transactionId, userId }, data: { isIgnored } });
   if (updated.count === 0) throw new RuleInputError("Transação não encontrada.");
+  // Ignorada também não reserva nem consome bucket; voltar refaz o que a stream e a regra mandam.
+  if (isIgnored) await db().bucketEntry.deleteMany({ where: { userId, transactionId, kind: "PAGAMENTO" } });
+  else await reapplyRulePayments(userId, [transactionId]);
+  await reallocateIncome(userId, [transactionId]);
 }
 
 // ─── Categorias ─────────────────────────────────────────────────────────

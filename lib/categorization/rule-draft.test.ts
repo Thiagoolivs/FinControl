@@ -18,9 +18,15 @@ describe("validateRuleDraft", () => {
     expect(validateRuleDraft(draft({ pattern: "(", matchType: "REGEX", categoryId: "x" })).pattern).toBe("Expressão regular inválida.");
   });
 
-  it("stream não conta como destino numa regra só de saída", () => {
+  it("saída precisa de categoria; bucket sozinho não classifica", () => {
     expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", revenueStreamId: "salario" })).destination).toBeDefined();
-    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", bucketId: "imposto" }))).toEqual({});
+    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", bucketId: "imposto" })).destination).toBeDefined();
+    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", bucketId: "imposto", categoryId: "das" }))).toEqual({});
+  });
+
+  it("entrada aceita só a stream", () => {
+    expect(validateRuleDraft(draft({ pattern: "TED ACME", direction: "ENTRADA", revenueStreamId: "salario" }))).toEqual({});
+    expect(validateRuleDraft(draft({ pattern: "TED ACME", direction: "AMBAS", revenueStreamId: "salario" }))).toEqual({});
   });
 
   it("valida a prioridade", () => {

@@ -44,11 +44,21 @@ export function validateRuleDraft(input: RuleDraft): RuleDraftErrors {
   const errors: RuleDraftErrors = {};
   const compiled = compilePattern(draft.pattern, draft.matchType);
   if (!compiled.ok) errors.pattern = compiled.error;
-  if (!draft.categoryId && !draft.revenueStreamId && !draft.bucketId) {
-    errors.destination = "Escolha pelo menos um destino: categoria, stream ou bucket.";
-  }
+  const message = ruleDestinationError(draft);
+  if (message) errors.destination = message;
   if (!Number.isInteger(draft.priority) || draft.priority < 1 || draft.priority > 9999) {
     errors.priority = "Use um número inteiro entre 1 e 9999.";
   }
   return errors;
+}
+
+/**
+ * Saída só é classificada por regra com categoria (o bucket diz de onde o dinheiro sai, não o que é);
+ * entrada aceita stream de receita ou categoria.
+ */
+export function ruleDestinationError(draft: Pick<RuleDraft, "direction" | "categoryId" | "revenueStreamId">): string | null {
+  if (draft.categoryId) return null;
+  if (draft.direction === "SAIDA") return "Regra de saída precisa de uma categoria.";
+  if (!draft.revenueStreamId) return "Escolha uma categoria ou uma stream de receita.";
+  return null;
 }

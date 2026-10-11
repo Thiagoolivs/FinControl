@@ -62,6 +62,7 @@ export async function listTransactions(userId: string, filters: TransactionFilte
         installmentTotal: true,
         account: { select: { name: true } },
         category: { select: { name: true, kind: true, parent: { select: { name: true } } } },
+        revenueStream: { select: { name: true } },
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
       take: LIST_LIMIT,

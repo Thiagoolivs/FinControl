@@ -44,6 +44,7 @@ export async function detectTransfers(userId: string, fromDate: string | null): 
       userId,
       transferPeerId: null,
       isIgnored: false,
+      revenueStreamId: null, // entrada já atribuída a uma stream é receita, não perna de transferência
       OR: [{ categoryId: null }, { categoryId }],
       ...(fromDate ? { date: { gte: toDbDate(fromDate) } } : {}),
     },

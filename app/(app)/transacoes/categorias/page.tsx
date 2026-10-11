@@ -2,13 +2,15 @@ import Link from "next/link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon, isIconName } from "@/components/ui/icon";
 import { Money } from "@/components/ui/money";
-import { StatRow } from "@/components/ui/stat-row";
+import { MoneyWaffle } from "@/components/ui/money-waffle";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
 import { Eyebrow } from "@/components/ui/text";
 import { requireUser } from "@/lib/auth/dal";
 import { formatMonthLabel, isMonth, todayLocal } from "@/lib/dates";
 import { formatBps, shareBps } from "@/lib/finance/share";
 import { parseScopeParam } from "@/lib/queries/scope";
+import { perHundred } from "@/lib/finance/month-flow";
+import { getMonthFlow } from "@/lib/queries/month-flow";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
 import { ensureDefaultCategories } from "@/lib/rules/categories";
 import { categoryOverThresholdBps } from "@/lib/sync/alerts";
@@ -26,10 +28,20 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
   const month = isMonth(first(params.mes)) && first(params.mes) <= currentMonth ? first(params.mes) : currentMonth;
   const scope = parseScopeParam(params.escopo);
   const scopeParam = first(params.escopo) || null;
-  const [breakdown, overBps] = await Promise.all([getMonthCategoryBreakdown(user.id, scope, month), categoryOverThresholdBps(user.id)]);
+  const [breakdown, overBps, flow] = await Promise.all([
+    getMonthCategoryBreakdown(user.id, scope, month),
+    categoryOverThresholdBps(user.id),
+    getMonthFlow(user.id, scope, month),
+  ]);
 
   const total = breakdown.reduce((sum, row) => sum + row.cents, 0);
-  const byKind = (kind: "ESSENCIAL" | "VARIAVEL" | null) => breakdown.filter((row) => row.kind === kind).reduce((sum, row) => sum + row.cents, 0);
+  const hundred = perHundred(flow);
+  const namesOf = (kind: "ESSENCIAL" | "VARIAVEL") =>
+    breakdown
+      .filter((row) => row.kind === kind)
+      .slice(0, 3)
+      .map((row) => row.name)
+      .join(", ");
   const listHref = (categoryId: string) => {
     const query = new URLSearchParams({ categoria: categoryId, tipo: "saidas" });
     if (month !== currentMonth) query.set("mes", month);
@@ -57,27 +69,41 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
         <EmptyState compact title="Nenhum gasto neste mês." description="Transferências entre suas contas, pagamento de fatura e investimentos não entram como gasto." />
       ) : (
         <>
-          <section aria-labelledby="total" className="flex flex-col gap-1">
-            <Eyebrow as="h2" id="total">
-              Gastos de {formatMonthLabel(month)}
-            </Eyebrow>
-            <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
-              <Money cents={total} />
-            </p>
-            <div className="mt-2 flex flex-col">
-              <StatRow label="Essenciais" valueCents={byKind("ESSENCIAL")} hint={`${formatBps(shareBps(byKind("ESSENCIAL"), total))} dos gastos`} />
-              <StatRow label="Variáveis" valueCents={byKind("VARIAVEL")} hint={`${formatBps(shareBps(byKind("VARIAVEL"), total))} dos gastos`} />
-              {byKind(null) > 0 ? (
-                <StatRow label="Sem categoria" valueCents={byKind(null)} hint="Ainda na fila de revisão" href="/transacoes/revisar" />
-              ) : null}
+          <section aria-labelledby="total" className="flex flex-col gap-6">
+            <div className="flex flex-col gap-1">
+              <Eyebrow as="h2" id="total">
+                Gastos de {formatMonthLabel(month)}
+              </Eyebrow>
+              <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
+                <Money cents={total} />
+              </p>
+              <p className="m-0 text-[15px] text-text-secondary">
+                Entrou <Money cents={flow.incomeCents} kind={flow.incomeCents > 0 ? "in" : "neutral"} />
+                {flow.investedCents > 0 ? (
+                  <>
+                    {" "}
+                    · investiu <Money cents={flow.investedCents} />
+                  </>
+                ) : null}
+              </p>
             </div>
+            {hundred ? (
+              <MoneyWaffle
+                data={hundred}
+                legend={{
+                  essencial: { hint: namesOf("ESSENCIAL") || undefined },
+                  estilo: { hint: namesOf("VARIAVEL") || undefined },
+                  sem: { hint: "toque para dizer o que foi", href: "/transacoes/revisar" },
+                }}
+              />
+            ) : null}
           </section>
 
-          <section aria-labelledby="areas" className="flex flex-col gap-1">
-            <Eyebrow as="h2" id="areas" className="pb-2">
+          <section aria-labelledby="areas" className="flex flex-col gap-1 pt-6">
+            <Eyebrow as="h2" id="areas" className="pb-4">
               Por área
             </Eyebrow>
-            <ul className="m-0 flex list-none flex-col gap-4 p-0">
+            <ul className="m-0 flex list-none flex-col gap-5 p-0">
               {breakdown.map((row) => {
                 const share = shareBps(row.cents, total);
                 const isOver = over(row.averageRatioBps);
@@ -90,7 +116,7 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
                           <span className="text-[16px] font-medium">{row.name}</span>
                           <span className="text-[13px] text-text-secondary">{formatBps(share)}</span>
                           {isOver && row.averageRatioBps !== null ? (
-                            <span className="text-[13px] text-warning">{formatBps(row.averageRatioBps)} da média</span>
+                            <span className="text-[13px] text-warning">{formatBps(row.averageRatioBps - 10_000)} acima da média</span>
                           ) : null}
                         </span>
                         <Money cents={row.cents} className="shrink-0 text-[16px] font-[450]" />

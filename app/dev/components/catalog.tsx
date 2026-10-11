@@ -21,7 +21,11 @@ import { StatRow } from "@/components/ui/stat-row";
 import type { ScopeFilter, ViewStatus } from "@/components/ui/status";
 import { Eyebrow } from "@/components/ui/text";
 import { TransactionList } from "@/components/ui/transaction-item";
-import { GOALS, NAV_ITEMS, PROJECTION, PROPOSAL_ROWS, RULE_OPTIONS, SCOPES } from "./fixtures";
+import { InsightList } from "@/components/ui/insight-list";
+import { MoneyWaffle } from "@/components/ui/money-waffle";
+import { MonthScore } from "@/components/ui/month-score";
+import { Section } from "@/components/ui/section";
+import { ACHIEVEMENTS, GOALS, INSIGHTS, MONTH_FLOWS, NAV_ITEMS, PROJECTION, PROPOSAL_ROWS, RULE_OPTIONS, SCOPES } from "./fixtures";
 
 const ALL_STATES: readonly SegmentOption<ViewStatus>[] = [
   { value: "ready", label: "Padrão" },
@@ -41,6 +45,17 @@ const PROPOSAL_STATES: readonly SegmentOption<ProposalStatus | "error">[] = [
 const THEMES: readonly SegmentOption<"dark" | "light">[] = [
   { value: "dark", label: "Escuro" },
   { value: "light", label: "Claro" },
+];
+
+const WAFFLE_STATES: readonly SegmentOption<"sobra" | "passou">[] = [
+  { value: "sobra", label: "Com sobra" },
+  { value: "passou", label: "Saiu mais que entrou" },
+];
+
+const SCORE_STATES: readonly SegmentOption<"bateu" | "falta" | "vazio">[] = [
+  { value: "bateu", label: "Meta batida" },
+  { value: "falta", label: "Falta" },
+  { value: "vazio", label: "Nada entrou" },
 ];
 
 const OVER_AVERAGE_BPS = 12_000;
@@ -110,6 +125,33 @@ export function Catalog() {
             status={status}
             emptyTitle="Nenhum gasto em outubro ainda."
             errorAction={retry}
+          />
+        )}
+      </Showcase>
+
+      <Showcase name="Section + MoneyWaffle + InsightList" states={WAFFLE_STATES}>
+        {(state) => {
+          const flow = MONTH_FLOWS[state];
+          return flow ? (
+            <Section id={`waffle-${state}`} eyebrow="Outubro até hoje" title="Para onde foi seu dinheiro">
+              <MoneyWaffle
+                data={flow}
+                legend={{ essencial: { hint: "Moradia, Mercado, Saúde", href: "#" }, estilo: { hint: "Lazer, Delivery", href: "#" }, sem: { hint: "toque para dizer o que foi", href: "#" } }}
+              />
+              <InsightList insights={INSIGHTS} />
+            </Section>
+          ) : null;
+        }}
+      </Showcase>
+
+      <Showcase name="MonthScore" states={SCORE_STATES}>
+        {(state) => (
+          <MonthScore
+            savingsBps={state === "bateu" ? 2_485 : state === "falta" ? 1_120 : null}
+            targetBps={2_000}
+            streak={state === "bateu" ? 3 : 0}
+            achievements={state === "vazio" ? ACHIEVEMENTS.slice(0, 1) : ACHIEVEMENTS.map((item) => (state === "falta" && item.key === "meta" ? { ...item, done: false, detail: "Sobrou 11% até agora." } : item))}
+            settingsHref="#"
           />
         )}
       </Showcase>

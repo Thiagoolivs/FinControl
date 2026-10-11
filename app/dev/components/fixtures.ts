@@ -5,6 +5,9 @@ import type { ProjectionMonth } from "@/components/ui/projection-chart";
 import type { ScopeFilter } from "@/components/ui/status";
 import type { TransactionItemData } from "@/components/ui/transaction-item";
 import type { CategorySpend } from "@/lib/finance/categories";
+import type { Insight } from "@/lib/finance/insights";
+import { perHundred } from "@/lib/finance/month-flow";
+import type { Achievement } from "@/lib/finance/month-score";
 
 type ScopeFixture = {
   heroCents: number;
@@ -169,4 +172,42 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/transacoes", label: "Transações", icon: "list", badge: 3, badgeLabel: "3 transações para revisar" },
   { href: "/metas", label: "Metas", icon: "target" },
   { href: "/projecao", label: "Projeção", icon: "chart" },
+];
+
+// "De cada R$ 100": mês que fecha com sobra e mês em que saiu mais do que entrou.
+export const MONTH_FLOWS = {
+  sobra: perHundred({
+    incomeCents: 1_200_000,
+    essentialCents: 498_000,
+    lifestyleCents: 262_500,
+    uncategorizedCents: 41_290,
+    investedCents: 100_000,
+    spentCents: 801_790,
+    leftoverCents: 298_210,
+    overflowCents: 0,
+  }),
+  passou: perHundred({
+    incomeCents: 650_000,
+    essentialCents: 498_000,
+    lifestyleCents: 262_500,
+    uncategorizedCents: 0,
+    investedCents: 0,
+    spentCents: 760_500,
+    leftoverCents: 0,
+    overflowCents: 110_500,
+  }),
+};
+
+export const INSIGHTS: Insight[] = [
+  { key: "maior", tone: "neutral", parts: ["A maior parte foi para Moradia: ", { cents: 240_000 }, ", 30% do que você gastou."] },
+  { key: "acima", tone: "warning", parts: ["Lazer está 28% acima da sua média dos últimos meses."] },
+  { key: "ritmo", tone: "good", parts: ["Até o dia 11, você gastou ", { cents: 32_000 }, " a menos que no mesmo ponto do mês passado."] },
+];
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { key: "fila", title: "Tudo categorizado", done: true, detail: "Você sabe para onde foi cada real." },
+  { key: "ritmo", title: "Abaixo do mês passado", done: true, detail: "Gastou menos que no mesmo ponto do mês passado." },
+  { key: "areas", title: "Nenhuma área acima da média", done: false, detail: "1 área passou da média." },
+  { key: "investiu", title: "Investiu", done: true, detail: "Separou dinheiro para o futuro." },
+  { key: "meta", title: "Guardar 20% do que entrou", done: true, detail: "Sobrou 25% até agora." },
 ];

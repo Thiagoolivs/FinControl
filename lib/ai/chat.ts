@@ -5,13 +5,26 @@ import { db } from "@/lib/db";
 import type { ScopeQuery } from "@/lib/queries/scope";
 import { type GeminiContent, GeminiError, type GeminiPart, generateWithTools } from "./gemini";
 import { buildSystemPrompt } from "./system-prompt";
+import { isWriteTool, type ProposalPreview, proposeWrite, WRITE_DECLARATIONS } from "./proposals";
 import { READ_DECLARATIONS, runReadTool, type ToolContext } from "./tools";
+
+const DECLARATIONS = [...READ_DECLARATIONS, ...WRITE_DECLARATIONS];
 
 const HISTORY_MESSAGES = 20;
 const MAX_TOOL_ROUNDS = 6;
 export const MAX_MESSAGE_LENGTH = 1_000;
 
-export type ChatTurn = { id: string; role: "user" | "model"; text: string; createdAt: Date; tools: string[] };
+export type ProposalView = { id: string; preview: ProposalPreview; status: "pending" | "confirmed" | "cancelled" | "expired" };
+
+export type ChatTurn = { id: string; role: "user" | "model"; text: string; createdAt: Date; tools: string[]; proposals: ProposalView[] };
+
+const STATUS: Record<string, ProposalView["status"]> = { PENDENTE: "pending", CONFIRMADA: "confirmed", CANCELADA: "cancelled", EXPIRADA: "expired" };
+
+function toProposalView(row: { id: string; preview: unknown; status: string; expiresAt: Date }): ProposalView {
+  const preview = row.preview as ProposalPreview;
+  const status = row.status === "PENDENTE" && row.expiresAt <= new Date() ? "expired" : (STATUS[row.status] ?? "expired");
+  return { id: row.id, preview: { title: preview.title, rows: preview.rows ?? [] }, status };
+}
 
 const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long", timeZone: "UTC" });
 
@@ -39,11 +52,19 @@ async function promptContext(userId: string, screen: ScopeQuery) {
 export async function getChatHistory(userId: string, limit = 40): Promise<ChatTurn[]> {
   const rows = await db().chatMessage.findMany({
     where: { userId, role: { in: ["USER", "MODEL"] } },
-    select: { id: true, role: true, content: true, createdAt: true, toolCalls: true },
+    select: {
+      id: true,
+      role: true,
+      content: true,
+      createdAt: true,
+      toolCalls: true,
+      proposals: { select: { id: true, preview: true, status: true, expiresAt: true }, orderBy: { createdAt: "asc" } },
+    },
     orderBy: { createdAt: "desc" },
     take: limit,
   });
   return rows.reverse().map((row) => ({
+    proposals: row.proposals.map(toProposalView),
     id: row.id,
     role: row.role === "USER" ? "user" : "model",
     text: row.content,
@@ -73,10 +94,11 @@ export async function askChat(userId: string, text: string, screen: ScopeQuery):
   const contents: GeminiContent[] = [...previous.reverse().map((row) => toContent(row.role, row.content)), { role: "user", parts: [{ text: question }] }];
   const context: ToolContext = { userId, screen, today: todayLocal() };
   const calls: { name: string; args: unknown }[] = [];
+  const proposalIds: string[] = [];
 
   let answer = "";
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
-    const parts = await generateWithTools({ system, contents, tools: READ_DECLARATIONS });
+    const parts = await generateWithTools({ system, contents, tools: DECLARATIONS });
     const functionCalls = parts.flatMap((part) => (part.functionCall ? [part.functionCall] : []));
     if (functionCalls.length === 0) {
       answer = parts.filter((part) => !part.thought).map((part) => part.text ?? "").join("").trim();
@@ -88,7 +110,14 @@ export async function askChat(userId: string, text: string, screen: ScopeQuery):
     const responses: GeminiPart[] = [];
     for (const call of functionCalls) {
       calls.push({ name: call.name, args: call.args ?? {} });
-      responses.push({ functionResponse: { name: call.name, response: await runReadTool(call.name, call.args ?? {}, context) } });
+      if (isWriteTool(call.name)) {
+        // Escrita vira proposta pendente; o modelo fica sabendo que depende do clique do usuário.
+        const proposed = await proposeWrite(call.name, call.args ?? {}, context);
+        if (proposed.proposalId) proposalIds.push(proposed.proposalId);
+        responses.push({ functionResponse: { name: call.name, response: proposed.result } });
+      } else {
+        responses.push({ functionResponse: { name: call.name, response: await runReadTool(call.name, call.args ?? {}, context) } });
+      }
     }
     contents.push({ role: "user", parts: responses });
   }
@@ -98,7 +127,13 @@ export async function askChat(userId: string, text: string, screen: ScopeQuery):
     db().chatMessage.create({ data: { userId, role: "USER", content: question, createdAt: askedAt } }),
     db().chatMessage.create({ data: { userId, role: "MODEL", content: answer, toolCalls: calls.length > 0 ? calls.map((call) => ({ name: call.name, args: call.args as object })) : undefined } }),
   ]);
-  return { id: saved.id, role: "model", text: answer, createdAt: saved.createdAt, tools: calls.map((call) => call.name) };
+  if (proposalIds.length > 0) await db().aiProposal.updateMany({ where: { userId, id: { in: proposalIds } }, data: { chatMessageId: saved.id } });
+  const proposals = await db().aiProposal.findMany({
+    where: { userId, id: { in: proposalIds } },
+    select: { id: true, preview: true, status: true, expiresAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return { id: saved.id, role: "model", text: answer, createdAt: saved.createdAt, tools: calls.map((call) => call.name), proposals: proposals.map(toProposalView) };
 }
 
 export async function clearChat(userId: string): Promise<void> {

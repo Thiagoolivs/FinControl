@@ -226,6 +226,7 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
         escopo: scopeLabel(query),
         encontradas: rows.length,
         transacoes: rows.slice(0, 40).map((row) => ({
+          id: row.id,
           data: fromDbDate(row.date),
           descricao: row.descriptionClean,
           valor: brl(row.amountCents),

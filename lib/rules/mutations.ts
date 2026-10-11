@@ -67,7 +67,7 @@ function assertPattern(input: Pick<RuleInput, "pattern" | "matchType">): void {
 export async function createRule(
   userId: string,
   input: RuleInput,
-  options: { origin: RuleOrigin; applyRetroactively: boolean },
+  options: { origin: RuleOrigin; applyRetroactively: boolean; proposalId?: string },
 ): Promise<{ ruleId: string; changed: number }> {
   assertPattern(input);
   const data = normalizeInput(input);
@@ -102,6 +102,7 @@ export async function createRule(
       entityId: rule.id,
       after: { ...data },
       origin: options.origin === "IA_CONFIRMADA" ? "AI" : "USER",
+      proposalId: options.proposalId ?? null,
     },
   });
   const changed = await applyRules(userId, options.applyRetroactively ? "automaticas" : "sem-categoria");

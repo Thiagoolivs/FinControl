@@ -17,14 +17,14 @@ export type EngineTransaction = {
   scope: "PF" | "PJ";
 };
 
-type CompiledRule = EngineRule & { test: (description: string) => boolean; order: number };
+type Compiled<R extends EngineRule> = R & { test: (description: string) => boolean; order: number };
 
 /**
  * Prepara as regras ativas na ordem de avaliação: menor prioridade primeiro; empate fica na ordem recebida
  * (a query entrega por data de criação). Regra com padrão inválido é descartada, nunca derruba o lote.
  */
-export function compileRules(rules: readonly EngineRule[]): CompiledRule[] {
-  const compiled: CompiledRule[] = [];
+export function compileRules<R extends EngineRule>(rules: readonly R[]): Compiled<R>[] {
+  const compiled: Compiled<R>[] = [];
   rules.forEach((rule, order) => {
     const pattern = compilePattern(rule.pattern, rule.matchType);
     if (pattern.ok) compiled.push({ ...rule, test: pattern.test, order });

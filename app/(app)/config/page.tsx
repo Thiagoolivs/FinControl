@@ -14,6 +14,7 @@ import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
 import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
+import { InstallApp } from "./install-app";
 
 const longDate = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
@@ -149,6 +150,13 @@ export default async function ConfigPage() {
             ? "Sugestões da IA ligadas: as descrições das saídas sem categoria vão para o Gemini (Google), sem valores nem contas."
             : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY e GEMINI_MODEL nas variáveis do Railway."}
         </p>
+      </section>
+
+      <section aria-labelledby="app" className="flex flex-col gap-3">
+        <h2 id="app" className="m-0 text-[28px] font-light leading-8 tracking-[-0.02em]">
+          App
+        </h2>
+        <InstallApp />
       </section>
 
       <section aria-labelledby="conta" className="flex flex-col gap-3">

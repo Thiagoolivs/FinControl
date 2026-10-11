@@ -8,18 +8,21 @@ import { Money } from "@/components/ui/money";
 import { MoneyWaffle } from "@/components/ui/money-waffle";
 import { MonthScore } from "@/components/ui/month-score";
 import { Section } from "@/components/ui/section";
+import { SpendCard } from "@/components/ui/spend-card";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
+import { Eyebrow } from "@/components/ui/text";
 import { TransactionList } from "@/components/ui/transaction-item";
 import { getAlerts } from "@/lib/alerts/queries";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, formatMoment, formatMonthLabel, todayLocal } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
-import { monthInsights } from "@/lib/finance/insights";
+import { monthInsights, pickHighlight } from "@/lib/finance/insights";
 import { perHundred, savingsRateBps } from "@/lib/finance/month-flow";
 import { monthAchievements, savingsStreak } from "@/lib/finance/month-score";
 import { formatBps, shareBps } from "@/lib/finance/share";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
+import { getAreaSpend, getHighlightCandidates } from "@/lib/queries/area-spend";
 import { getMonthOverview } from "@/lib/queries/month-flow";
 import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
@@ -46,7 +49,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const today = todayLocal();
   const month = today.slice(0, 7);
 
-  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings] = await Promise.all([
+  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
     getBucketTotals(user.id, query),
@@ -59,7 +62,11 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     categoryOverThresholdBps(user.id),
     countReviewQueue(user.id),
     db().user.findUniqueOrThrow({ where: { id: user.id }, select: { savingsTargetBps: true } }),
+    getHighlightCandidates(user.id, query, today),
   ]);
+  // Manchete do mês: o gasto de estilo de vida que mais cresceu além do limite "acima da média" do usuário.
+  const highlight = pickHighlight(candidates, overBps === null ? null : overBps - 10_000);
+  const highlightSpend = highlight ? await getAreaSpend(user.id, query, highlight.id, month, today) : null;
   // Erro de conexão e consentimento já aparecem como aviso no topo, com o estado de agora.
   const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
@@ -156,6 +163,32 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
 
       {connections.length > 0 ? (
         <div className="flex flex-col gap-16 pt-4 pb-4">
+          {highlight && highlightSpend ? (
+            <section aria-labelledby="destaque" className="flex flex-col gap-6">
+              <header className="flex flex-col gap-3">
+                <Eyebrow as="p">Destaque do mês</Eyebrow>
+                <h2 id="destaque" className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
+                  <Money cents={highlight.cents} hideZeroCents className="font-normal" /> em {highlight.name} neste mês.
+                </h2>
+                <p className={`m-0 text-[15px] leading-[21px] ${highlight.reason === "cresceu" ? "text-warning" : "text-text-secondary"}`}>
+                  {highlight.reason === "cresceu" && highlight.variationBps !== null
+                    ? `${formatBps(highlight.variationBps)} a mais que no mesmo ponto do mês passado.`
+                    : "Seu maior gasto de estilo de vida até agora."}
+                </p>
+              </header>
+              <SpendCard
+                icon={highlightSpend.icon}
+                title={`Gastos com ${highlight.name} neste mês`}
+                cents={highlightSpend.totalCents}
+                variationBps={highlight.variationBps}
+                current={highlightSpend.current}
+                previous={highlightSpend.previous}
+                daysInMonth={highlightSpend.daysInMonth}
+                href={`/transacoes/categorias/${highlight.id}`}
+              />
+            </section>
+          ) : null}
+
           <Section id="para-onde" eyebrow={`${monthName} até hoje`} title="Para onde foi seu dinheiro">
             {hundred ? (
               <>
@@ -196,7 +229,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                   return (
                     <li key={row.id}>
                       <Link
-                        href={row.id === "sem" ? "/transacoes/revisar" : `/transacoes?categoria=${row.id}&tipo=saidas`}
+                        href={row.id === "sem" ? "/transacoes/revisar" : `/transacoes/categorias/${row.id}`}
                         className="flex min-h-11 flex-col gap-2 text-text-primary no-underline transition-opacity duration-200 ease-apple active:opacity-60"
                       >
                         <span className="flex items-center gap-3">

@@ -3,13 +3,15 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon, isIconName } from "@/components/ui/icon";
 import { Money } from "@/components/ui/money";
 import { MoneyWaffle } from "@/components/ui/money-waffle";
+import { SpendCard } from "@/components/ui/spend-card";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
 import { Eyebrow } from "@/components/ui/text";
 import { requireUser } from "@/lib/auth/dal";
 import { formatMonthLabel, isMonth, todayLocal } from "@/lib/dates";
-import { formatBps, shareBps } from "@/lib/finance/share";
+import { formatBps, shareBps, variationBps } from "@/lib/finance/share";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { perHundred } from "@/lib/finance/month-flow";
+import { getAreaSpend } from "@/lib/queries/area-spend";
 import { getMonthFlow } from "@/lib/queries/month-flow";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
 import { ensureDefaultCategories } from "@/lib/rules/categories";
@@ -24,17 +26,20 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
   const user = await requireUser();
   await ensureDefaultCategories(user.id);
   const params = await searchParams;
-  const currentMonth = todayLocal().slice(0, 7);
+  const today = todayLocal();
+  const currentMonth = today.slice(0, 7);
   const month = isMonth(first(params.mes)) && first(params.mes) <= currentMonth ? first(params.mes) : currentMonth;
   const scope = parseScopeParam(params.escopo);
   const scopeParam = first(params.escopo) || null;
-  const [breakdown, overBps, flow] = await Promise.all([
+  const [breakdown, overBps, flow, spend] = await Promise.all([
     getMonthCategoryBreakdown(user.id, scope, month),
     categoryOverThresholdBps(user.id),
     getMonthFlow(user.id, scope, month),
+    getAreaSpend(user.id, scope, "total", month, today),
   ]);
 
   const total = breakdown.reduce((sum, row) => sum + row.cents, 0);
+  const isCurrent = month === currentMonth;
   const hundred = perHundred(flow);
   const namesOf = (kind: "ESSENCIAL" | "VARIAVEL") =>
     breakdown
@@ -42,11 +47,12 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
       .slice(0, 3)
       .map((row) => row.name)
       .join(", ");
-  const listHref = (categoryId: string) => {
-    const query = new URLSearchParams({ categoria: categoryId, tipo: "saidas" });
+  const areaHref = (categoryId: string) => {
+    const query = new URLSearchParams();
     if (month !== currentMonth) query.set("mes", month);
     if (scopeParam) query.set("escopo", scopeParam);
-    return `/transacoes?${query}`;
+    const search = query.toString();
+    return search ? `/transacoes/categorias/${categoryId}?${search}` : `/transacoes/categorias/${categoryId}`;
   };
   const monthHref = (target: string) => {
     const query = new URLSearchParams();
@@ -70,13 +76,25 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
       ) : (
         <>
           <section aria-labelledby="total" className="flex flex-col gap-6">
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-3">
               <Eyebrow as="h2" id="total">
                 Gastos de {formatMonthLabel(month)}
               </Eyebrow>
-              <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
-                <Money cents={total} />
-              </p>
+              {spend ? (
+                <SpendCard
+                  icon="list"
+                  title={isCurrent ? "Gastos neste mês" : `Gastos em ${formatMonthLabel(month).split(" ")[0] ?? ""}`}
+                  cents={spend.totalCents}
+                  variationBps={spend.previousToDateCents === null ? null : variationBps(spend.previousToDateCents, spend.totalCents)}
+                  current={spend.current}
+                  previous={spend.previous}
+                  daysInMonth={spend.daysInMonth}
+                />
+              ) : (
+                <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
+                  <Money cents={total} />
+                </p>
+              )}
               <p className="m-0 text-[15px] text-text-secondary">
                 Entrou <Money cents={flow.incomeCents} kind={flow.incomeCents > 0 ? "in" : "neutral"} />
                 {flow.investedCents > 0 ? (
@@ -109,7 +127,7 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
                 const isOver = over(row.averageRatioBps);
                 return (
                   <li key={row.id} className="flex flex-col gap-1.5">
-                    <Link href={row.id === "sem" ? "/transacoes/revisar" : listHref(row.id)} className="flex min-h-11 flex-col gap-1.5 text-text-primary no-underline">
+                    <Link href={areaHref(row.id)} className="flex min-h-11 flex-col gap-1.5 text-text-primary no-underline">
                       <span className="flex items-center gap-3">
                         <Icon name={isIconName(row.icon) ? row.icon : "dots"} size={18} className={isOver ? "shrink-0 text-warning" : "shrink-0 text-text-secondary"} />
                         <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
@@ -129,7 +147,7 @@ export default async function SpendByCategoryPage({ searchParams }: PageProps<"/
                       <ul className="m-0 flex list-none flex-col p-0 pl-[30px]">
                         {row.children.map((child) => (
                           <li key={`${row.id}:${child.id}:${child.name}`}>
-                            <Link href={listHref(child.id)} className="flex min-h-11 items-center gap-3 text-text-primary no-underline">
+                            <Link href={areaHref(child.id)} className="flex min-h-11 items-center gap-3 text-text-primary no-underline">
                               <span className="flex-1 text-[15px] text-text-secondary">{child.name}</span>
                               <Money cents={child.cents} className="text-[15px] text-text-secondary" />
                             </Link>

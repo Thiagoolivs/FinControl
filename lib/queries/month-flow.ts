@@ -30,7 +30,8 @@ async function flowRows(userId: string, scope: ScopeQuery, from: string, to: str
   }));
 }
 
-async function dataStart(userId: string, scope: ScopeQuery): Promise<string | null> {
+/** Primeiro dia com transação no escopo: mês antes disso é "sem dados", não "gasto zero". */
+export async function dataStart(userId: string, scope: ScopeQuery): Promise<string | null> {
   const first = await db().transaction.aggregate({ where: { userId, ...scopeWhere(scope) }, _min: { date: true } });
   return first._min.date ? fromDbDate(first._min.date) : null;
 }

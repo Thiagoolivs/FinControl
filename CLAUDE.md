@@ -44,6 +44,8 @@ lib/
   categorization/ puro e testado: limpeza de descrição, matcher (sem acento), motor de regras, agrupamento da fila, categorias padrão
   rules/          server-only: aplicar regras, fila de revisão, sugestões da IA, mutações de regra/categoria
   streams/        server-only: configuração inicial (streams, buckets, DAS), razão dos buckets, mutações e consultas
+  goals/          server-only: metas iniciais, progresso (cache + GoalSnapshot do mês), aportes
+  projection/     server-only: detecção das séries recorrentes (RecurringSeries) e montagem da projeção com premissas
   ai/             cliente do Gemini (fetch + zod, resposta JSON validada)
   charts/         escalas de gráfico
   security/       rate limit
@@ -63,7 +65,8 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Toda query filtra por `userId` na própria query (coluna direta). Nunca no cliente.
 - Nenhuma query soma PF e PJ sem o chamador passar `consolidated: true`.
 - Transferência entre contas próprias e pagamento de fatura não são despesa.
-- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`).
+- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`), calculado no começo do mês a partir do histórico de aportes (meses de aporte contam o corrente). Atrasada = esse valor subiu do mês passado para este, ou o prazo venceu. Aporte no dia da criação é saldo inicial. Ritmo = média dos últimos 3 meses fechados, sem o mês de criação.
+- Projeção (`lib/finance/projection.ts`): parte do disponível menos a fatura em aberto (limite usado − parcelas futuras). Entram só premissas visíveis: recorrentes (±10%, intervalo regular, 3+ ocorrências; receita sem as reservas da stream), parcelas futuras, média de 3 meses fechados dos gastos variáveis, aportes das metas e obrigações fixas. Projeto avulso só na faixa otimista; negócio em linha separada; retirada não é projetada.
 - Pluggy: conta bancária mantém o sinal; cartão vem com compra positiva e é invertido na ingestão. Dedup por `pluggyTransactionId`; PENDING que some da janela lida é removida.
 - Transferência = par saída/entrada de mesmo valor em contas diferentes, até 3 dias (`lib/finance/transfers.ts`); as duas pernas apontam uma para a outra (`transferPeerId`) e recebem a categoria de sistema `TRANSFERENCIA`. Saída de cartão nunca é perna.
 - Categorização: depois de cada sync, pareamento de transferências e então regras no que sobrou sem categoria. A primeira regra (menor prioridade; empate = mais antiga) que casa com a descrição limpa ou a original decide. O que foi categorizado por regra é sempre o que as regras dizem agora (editar/desligar/reordenar refaz); categoria escolhida à mão nunca é tocada.

@@ -52,6 +52,7 @@ lib/
   db.ts           Prisma client
   env.ts          variáveis de ambiente validadas (zod)
 prisma/           schema.prisma + migrations
+public/           sw.js (service worker), offline.html, icons/ (fonte em icons/icon.svg; PNGs gerados dela)
 scripts/          CLIs executados com tsx
 proxy.ts          checagem otimista de sessão (a validação real é no servidor)
 ```
@@ -79,6 +80,7 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Limpeza de descrição é idempotente e roda de novo no histórico a cada boot (`lib/rules/reclean.ts`): mudar `clean.ts` vale para tudo no próximo deploy. Regra criada de sugestão aceita sem mudança = `IA_CONFIRMADA` e vai para o `AuditLog` com origem `AI`.
 - Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
+- PWA: `app/manifest.ts`, `app/icon.svg`, `app/apple-icon.png`. O service worker não guarda nenhum dado financeiro: navegação sempre na rede, sem rede mostra `offline.html`. Arquivos que o navegador busca para instalar ficam fora do `proxy.ts`.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.
 - Módulos que tocam sessão ou dados importam `server-only`. Módulos puros (`lib/auth/password.ts`, `totp.ts`, `crypto.ts`, `lib/finance/*`) não, para os scripts conseguirem usá-los.
 - Server Actions e route handlers revalidam a sessão por conta própria; o `proxy.ts` é só um atalho de redirecionamento.

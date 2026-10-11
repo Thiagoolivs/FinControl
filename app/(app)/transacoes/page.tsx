@@ -3,10 +3,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { StatRow } from "@/components/ui/stat-row";
 import type { ScopeFilter } from "@/components/ui/status";
-import { Eyebrow } from "@/components/ui/text";
 import { TransactionList } from "@/components/ui/transaction-item";
 import { requireUser } from "@/lib/auth/dal";
-import { addMonths, formatMonthLabel, isMonth, todayLocal } from "@/lib/dates";
+import { isMonth, todayLocal } from "@/lib/dates";
 import { summarizeFlows } from "@/lib/finance/flows";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { listTransactions, TRANSACTION_KINDS, type TransactionKindFilter } from "@/lib/queries/transactions";
@@ -15,6 +14,7 @@ import { countReviewQueue } from "@/lib/rules/queue";
 import { PAGE_CLASS, PageHeader } from "../page-header";
 import { groupByDay, isTransferRow, toTransactionItem } from "../transaction-groups";
 import { TransactionFilters } from "./filters";
+import { MonthNav, ViewTabs } from "./month-nav";
 
 const first = (value: string | string[] | undefined): string => (Array.isArray(value) ? (value[0] ?? "") : (value ?? ""));
 
@@ -66,6 +66,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
   return (
     <main className={PAGE_CLASS}>
       <PageHeader title="Transações" />
+      <ViewTabs active="extrato" month={month} currentMonth={currentMonth} scopeParam={first(params.escopo) || null} />
 
       {queueCount > 0 ? (
         <Link
@@ -83,19 +84,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
         </Link>
       ) : null}
 
-      <nav aria-label="Mês" className="flex items-center justify-between">
-        <Link href={monthHref(addMonths(month, -1))} aria-label="Mês anterior" className="flex size-11 items-center justify-center rounded-full text-text-secondary">
-          <Icon name="chevron-right" size={18} className="rotate-180" />
-        </Link>
-        <Eyebrow as="h2">{formatMonthLabel(month)}</Eyebrow>
-        {month < currentMonth ? (
-          <Link href={monthHref(addMonths(month, 1))} aria-label="Próximo mês" className="flex size-11 items-center justify-center rounded-full text-text-secondary">
-            <Icon name="chevron-right" size={18} />
-          </Link>
-        ) : (
-          <span className="size-11" />
-        )}
-      </nav>
+      <MonthNav month={month} currentMonth={currentMonth} hrefFor={monthHref} />
 
       <TransactionFilters categories={categoryOptions(tree)} search={search} categoryId={categoryId} kind={kind ?? ""} scope={scopeValue} />
 

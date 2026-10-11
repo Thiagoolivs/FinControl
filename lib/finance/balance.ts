@@ -31,3 +31,18 @@ export function summarizeBalances(accounts: readonly BalanceAccount[]): BalanceS
   }
   return summary;
 }
+
+export type BalanceComposition = {
+  grossCents: number; // saldo das contas
+  reservedCents: number; // reserva de imposto + reserva de custo
+  businessCashCents: number; // caixa do negócio
+  availableCents: number; // o que sobra: quanto dá para gastar
+};
+
+/** Disponível = saldo das contas − reservas − caixa do negócio. Pode ficar negativo se as reservas passarem do saldo. */
+export function composeBalance(input: { grossCents: number; reservedCents: number; businessCashCents: number }): BalanceComposition {
+  assertCents(input.grossCents);
+  assertCents(input.reservedCents);
+  assertCents(input.businessCashCents);
+  return { ...input, availableCents: input.grossCents - input.reservedCents - input.businessCashCents };
+}

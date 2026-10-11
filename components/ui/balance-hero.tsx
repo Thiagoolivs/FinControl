@@ -102,7 +102,7 @@ export function BalanceComposition({ segments, total }: BalanceCompositionProps)
 
   return (
     <div className="mt-4 flex flex-col">
-      {visible.length > 1 ? (
+      {visible.length > 0 ? (
         <div aria-hidden="true" className="flex h-3 gap-0.5">
           {visible.map((segment) => (
             <div

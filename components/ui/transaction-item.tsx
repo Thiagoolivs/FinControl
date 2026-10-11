@@ -20,7 +20,7 @@ export type TransactionItemData = {
 
 export function TransactionItem({ item }: { item: TransactionItemData }) {
   return (
-    <RowLink href={item.href} className="min-h-14 py-1.5">
+    <RowLink href={item.href} className="min-h-14 py-1.5 font-[450]">
       <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[16px]">{item.description}</span>

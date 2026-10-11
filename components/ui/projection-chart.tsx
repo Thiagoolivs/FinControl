@@ -2,14 +2,26 @@
 
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { niceTicks } from "@/lib/charts/ticks";
-import { formatCents, formatCentsCompact } from "@/lib/finance/money";
+import { formatCents as formatCentsRaw, formatCentsCompact as formatCompactRaw } from "@/lib/finance/money";
 import { Button } from "./button";
 import { cn } from "./cn";
 import { EmptyState, ErrorState } from "./empty-state";
 import { Icon } from "./icon";
 import { LoadingRegion, Skeleton } from "./skeleton";
 import type { ViewStatus } from "./status";
+import { useValuesHidden } from "./hide-values";
 import { Eyebrow } from "./text";
+
+const MASK = "R$ ••••";
+
+/** Formatação que respeita "ocultar valores": o gráfico mantém a forma, os números somem. */
+function useFormat() {
+  const hidden = useValuesHidden();
+  return {
+    formatCents: (cents: number) => (hidden ? MASK : formatCentsRaw(cents)),
+    formatCentsCompact: (cents: number) => (hidden ? "••••" : formatCompactRaw(cents)),
+  };
+}
 
 export type ProjectionMonth = {
   key: string;
@@ -127,6 +139,7 @@ function pathFrom(points: Array<[number, number] | null>): string {
 }
 
 function Chart({ months }: { months: ProjectionMonth[] }) {
+  const { formatCents, formatCentsCompact } = useFormat();
   const containerRef = useRef<HTMLDivElement>(null);
   const width = useElementWidth(containerRef, 358);
   const [active, setActive] = useState<number | null>(null);
@@ -295,6 +308,7 @@ function Tooltip({ month, side }: { month: ProjectionMonth; side: "left" | "righ
 }
 
 function TooltipRow({ keyClass, label, cents }: { keyClass: string; label: string; cents: number }) {
+  const { formatCents } = useFormat();
   return (
     <span className="flex items-center gap-2">
       <span aria-hidden="true" className={cn("h-0.5 w-3 shrink-0 rounded-full", keyClass)} />
@@ -305,6 +319,7 @@ function TooltipRow({ keyClass, label, cents }: { keyClass: string; label: strin
 }
 
 function ProjectionTable({ months }: { months: ProjectionMonth[] }) {
+  const { formatCents } = useFormat();
   const hasOptimistic = months.some((month) => month.optimisticCents !== null);
   const hasBusiness = months.some((month) => month.businessCents !== null);
   const cell = (cents: number | null) =>

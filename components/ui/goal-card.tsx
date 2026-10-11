@@ -1,13 +1,13 @@
-import { formatCents } from "@/lib/finance/money";
 import { formatBps, progressBps } from "@/lib/finance/share";
 import { cn } from "./cn";
 import { Icon } from "./icon";
+import { Money } from "./money";
 import { RowLink } from "./row-link";
 import { LoadingRegion, Skeleton } from "./skeleton";
 import type { Scope } from "./status";
 import { ScopeTag } from "./text";
 
-export type GoalStatus = "on-track" | "late" | "done";
+export type GoalStatus = "on-track" | "late" | "done" | "paused" | "unset";
 
 type GoalCardProps = {
   name: string;
@@ -42,7 +42,7 @@ export function GoalCard(props: GoalCardProps) {
 
   const { name, scope, currentCents, targetCents, monthlyRequiredCents, targetDateLabel, status, realisticDateLabel, href } = props;
   const bps = progressBps(currentCents, targetCents);
-  const ringColor = status === "late" ? "stroke-negative" : "stroke-positive";
+  const ringColor = status === "late" ? "stroke-negative" : status === "paused" || status === "unset" ? "stroke-text-tertiary" : "stroke-positive";
 
   return (
     <RowLink href={href} className="gap-5 py-1">
@@ -71,7 +71,13 @@ export function GoalCard(props: GoalCardProps) {
           <ScopeTag scope={scope} />
         </span>
         <span className="text-[15px] text-text-secondary">
-          {formatCents(currentCents, { hideZeroCents: true })} de {formatCents(targetCents, { hideZeroCents: true })}
+          <Money cents={currentCents} hideZeroCents />
+          {status === "unset" ? null : (
+            <>
+              {" "}
+              de <Money cents={targetCents} hideZeroCents />
+            </>
+          )}
         </span>
         <GoalStatusLine
           status={status}
@@ -90,7 +96,18 @@ function GoalStatusLine({
   targetDateLabel,
   realisticDateLabel,
 }: Pick<GoalCardProps, "status" | "monthlyRequiredCents" | "targetDateLabel" | "realisticDateLabel">) {
-  const monthly = `${formatCents(monthlyRequiredCents, { hideZeroCents: true })}/mês`;
+  const monthly = (
+    <>
+      <Money cents={monthlyRequiredCents} hideZeroCents />
+      /mês
+    </>
+  );
+  if (status === "unset") {
+    return <span className="text-[13px] text-accent">Defina o valor e a data</span>;
+  }
+  if (status === "paused") {
+    return <span className="text-[13px] text-text-secondary">Pausada · fora da projeção</span>;
+  }
   if (status === "done") {
     return (
       <span className="flex items-start gap-1.5 text-[13px] text-positive">
@@ -104,7 +121,7 @@ function GoalStatusLine({
       <>
         <span className="flex items-start gap-1.5 text-[13px] text-negative">
           <Icon name="alert" size={14} strokeWidth={2.2} className="mt-[3px] shrink-0" />
-          Atrasada{realisticDateLabel ? ` · no ritmo atual, ${realisticDateLabel}` : ""}
+          <span>Atrasada{realisticDateLabel ? ` · no ritmo atual, ${realisticDateLabel}` : ""}</span>
         </span>
         <span className="text-[13px] text-text-secondary">
           Precisa {monthly} para {targetDateLabel}
@@ -115,7 +132,9 @@ function GoalStatusLine({
   return (
     <span className="flex items-start gap-1.5 text-[13px] text-positive">
       <Icon name="check" size={14} strokeWidth={2.4} className="mt-[3px] shrink-0" />
-      No prazo · {monthly} até {targetDateLabel}
+      <span>
+        No prazo · {monthly} até {targetDateLabel}
+      </span>
     </span>
   );
 }

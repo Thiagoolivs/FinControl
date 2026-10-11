@@ -15,6 +15,7 @@ import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
 import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
+import { AboutMeForm } from "./about-me";
 import { InstallApp } from "./install-app";
 import { NotificationSettings } from "./notifications";
 
@@ -26,12 +27,14 @@ function formatLocalDate(instant: Date): string {
 
 export default async function ConfigPage() {
   const user = await requireUser();
-  const [connections, rules, cron, ruleCount] = await Promise.all([
+  const [connections, rules, cron, ruleCount, profile] = await Promise.all([
     getConnections(user.id),
     connectionAlertRules(user.id),
     getCronHealth(user.id),
     db().rule.count({ where: { userId: user.id } }),
+    db().user.findUnique({ where: { id: user.id }, select: { aboutMe: true } }),
   ]);
+  const aboutMe = profile?.aboutMe ?? null;
   const configured = isPluggyConfigured();
 
   return (
@@ -152,6 +155,18 @@ export default async function ConfigPage() {
             ? "Sugestões da IA ligadas: as descrições das saídas sem categoria vão para o Gemini (Google), sem valores nem contas."
             : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY e GEMINI_MODEL nas variáveis do Railway."}
         </p>
+      </section>
+
+      <section aria-labelledby="chat" className="flex flex-col gap-3">
+        <h2 id="chat" className="m-0 text-[28px] font-light leading-8 tracking-[-0.02em]">
+          Chat
+        </h2>
+        <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
+          <strong className="font-semibold text-text-primary">O conteúdo do chat passa pela API do Gemini (Google)</strong>: o que você
+          escreve, o texto abaixo, os nomes das suas categorias, metas e streams, e os números que a IA consulta para responder
+          (saldos, gastos, metas, carteira). A IA só lê; não grava nada e não recomenda compra ou venda de investimento.
+        </p>
+        <AboutMeForm initial={aboutMe ?? ""} />
       </section>
 
       <section aria-labelledby="app" className="flex flex-col gap-3">

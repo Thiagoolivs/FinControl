@@ -24,9 +24,21 @@ export type RuleInput = {
   priority: number;
 };
 
-async function assertCategory(userId: string, categoryId: string): Promise<void> {
-  const found = await db().category.findFirst({ where: { id: categoryId, userId }, select: { id: true } });
+async function assertCategory(userId: string, categoryId: string): Promise<CategoryKind> {
+  const found = await db().category.findFirst({ where: { id: categoryId, userId }, select: { kind: true } });
   if (!found) throw new RuleInputError("Categoria não encontrada.");
+  return found.kind;
+}
+
+const INCOME_ONLY = "Categoria de entrada (reembolso, rendimento…) só vale para entradas.";
+
+/** Categoria de entrada nunca casa com saída: regra "ambas" com ela vira só de entrada. */
+async function ruleDirection(userId: string, input: RuleInput): Promise<RuleDirection> {
+  if (!input.categoryId) return input.direction;
+  const category = await db().category.findFirst({ where: { id: input.categoryId, userId }, select: { kind: true } });
+  if (category?.kind !== "RECEITA") return input.direction;
+  if (input.direction === "SAIDA") throw new RuleInputError(INCOME_ONLY);
+  return "ENTRADA";
 }
 
 async function assertDestinations(userId: string, input: RuleInput): Promise<void> {
@@ -70,7 +82,7 @@ export async function createRule(
   options: { origin: RuleOrigin; applyRetroactively: boolean; proposalId?: string },
 ): Promise<{ ruleId: string; changed: number }> {
   assertPattern(input);
-  const data = normalizeInput(input);
+  const data = normalizeInput({ ...input, direction: await ruleDirection(userId, input) });
   await assertDestinations(userId, data);
   // Regra igual já existe (ex.: dois grupos que a IA generalizou para o mesmo padrão): reaproveita.
   const same = await db().rule.findFirst({
@@ -112,7 +124,7 @@ export async function createRule(
 /** Editar refaz tudo que é de regra: o que a regra categoriza passa a ser sempre o que ela diz agora. */
 export async function updateRule(userId: string, ruleId: string, input: RuleInput): Promise<number> {
   assertPattern(input);
-  const data = normalizeInput(input);
+  const data = normalizeInput({ ...input, direction: await ruleDirection(userId, input) });
   await assertDestinations(userId, data);
   const updated = await db().rule.updateMany({ where: { id: ruleId, userId }, data });
   if (updated.count === 0) throw new RuleInputError("Regra não encontrada.");
@@ -179,7 +191,7 @@ export async function categorizeGroup(
     suggestionId: string | null;
   },
 ): Promise<void> {
-  await assertCategory(userId, input.categoryId);
+  const kind = await assertCategory(userId, input.categoryId);
   const suggestion = input.suggestionId
     ? await db().ruleSuggestion.findFirst({ where: { id: input.suggestionId, userId, status: "PENDENTE" } })
     : null;
@@ -203,7 +215,7 @@ export async function categorizeGroup(
   }
   // Você escolheu estas transações: mesmo as que o padrão não pegar ficam nesta categoria.
   await db().transaction.updateMany({
-    where: { userId, id: { in: input.transactionIds }, categoryId: null, transferPeerId: null },
+    where: { userId, id: { in: input.transactionIds }, categoryId: null, transferPeerId: null, ...(kind === "RECEITA" ? { amountCents: { gt: 0 } } : {}) },
     data: { categoryId: input.categoryId, ruleId },
   });
   if (ruleId) await refreshHitCounts(userId, [ruleId]);
@@ -271,9 +283,12 @@ export async function ignoreSuggestion(userId: string, suggestionId: string): Pr
 
 /** Categoria escolhida à mão (null = volta para a fila). Se era perna de transferência, desfaz o par. */
 export async function setTransactionCategory(userId: string, transactionId: string, categoryId: string | null): Promise<void> {
-  const transaction = await db().transaction.findFirst({ where: { id: transactionId, userId }, select: { transferPeerId: true, revenueStreamId: true } });
+  const transaction = await db().transaction.findFirst({
+    where: { id: transactionId, userId },
+    select: { transferPeerId: true, revenueStreamId: true, amountCents: true },
+  });
   if (!transaction) throw new RuleInputError("Transação não encontrada.");
-  if (categoryId) await assertCategory(userId, categoryId);
+  if (categoryId && (await assertCategory(userId, categoryId)) === "RECEITA" && transaction.amountCents < 0) throw new RuleInputError(INCOME_ONLY);
   if (transaction.transferPeerId) await unpairTransfers(userId, [transactionId]);
   // Entrada com categoria não é receita: sai da stream e as reservas dela são desfeitas.
   const leavesStream = categoryId !== null && transaction.revenueStreamId !== null;

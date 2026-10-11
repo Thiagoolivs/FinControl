@@ -82,6 +82,7 @@ enum CategoryKind {
   VARIAVEL
   INVESTIMENTO
   TRANSFERENCIA
+  RECEITA // entrada que não é receita de stream: reembolso, rendimento, presente, venda…
 }
 
 enum MatchType {
@@ -180,18 +181,19 @@ enum AuditOrigin {
 // ─── Identidade ──────────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(cuid())
-  username      String?   @unique // vem de LOGIN_USERNAME (sincronizado no boot)
-  email         String?   @unique
-  passwordHash  String // argon2id
-  totpSecretEnc String? // AES-256-GCM, chave derivada de AUTH_SECRET
-  totpEnabledAt DateTime? // null = só acessa a tela de setup do 2FA
-  totpLastStep  Int? // anti-replay: o mesmo código não vale duas vezes
-  name          String?
-  aboutMe       String?   @db.Text // "quem sou eu" no system prompt da IA
-  timezone      String    @default("America/Sao_Paulo")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  username         String?   @unique // vem de LOGIN_USERNAME (sincronizado no boot)
+  email            String?   @unique
+  passwordHash     String // argon2id
+  totpSecretEnc    String? // AES-256-GCM, chave derivada de AUTH_SECRET
+  totpEnabledAt    DateTime? // null = só acessa a tela de setup do 2FA
+  totpLastStep     Int? // anti-replay: o mesmo código não vale duas vezes
+  name             String?
+  aboutMe          String?   @db.Text // "quem sou eu" no system prompt da IA
+  reviewWindowDays Int?      @default(60) // fila de revisão só com os últimos N dias; null = tudo
+  timezone         String    @default("America/Sao_Paulo")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   sessions           Session[]
   connections        Connection[]

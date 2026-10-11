@@ -4,6 +4,17 @@ import type { IconName } from "@/components/ui/icon";
 export type DefaultCategory = { name: string; icon: IconName; kind: CategoryKind; children?: string[] };
 
 /**
+ * Entradas que não são receita de uma stream (não geram reserva). Quem já tinha categorias recebeu esta
+ * árvore pela migration `fila_recente_e_entradas`, com os mesmos nomes.
+ */
+export const INCOME_CATEGORIES: DefaultCategory = {
+  name: "Entradas",
+  icon: "arrow-in",
+  kind: "RECEITA",
+  children: ["Reembolso", "Rendimentos", "Pix e presentes recebidos", "Venda de algo", "Cashback e prêmios", "Outras entradas"],
+};
+
+/**
  * Árvore inicial (duas camadas). Só valores iniciais: o usuário renomeia, cria e apaga em Config → Categorias.
  * Subcategoria herda ícone e tipo da mãe. "Transferências" é de sistema (pareamento) e criada à parte.
  */
@@ -29,6 +40,7 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategory[] = [
   { name: "Presentes e doações", icon: "gift", kind: "VARIAVEL" },
   { name: "Outros", icon: "dots", kind: "VARIAVEL" },
   { name: "Investimentos", icon: "chart", kind: "INVESTIMENTO", children: ["Aplicações", "Previdência"] },
+  INCOME_CATEGORIES,
 ];
 
 export const CATEGORY_KIND_LABEL: Record<CategoryKind, string> = {
@@ -36,4 +48,5 @@ export const CATEGORY_KIND_LABEL: Record<CategoryKind, string> = {
   VARIAVEL: "Variável",
   INVESTIMENTO: "Investimento",
   TRANSFERENCIA: "Transferência",
+  RECEITA: "Entrada",
 };

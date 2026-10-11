@@ -1,4 +1,5 @@
 import "server-only";
+import type { CategoryKind } from "@/generated/prisma/enums";
 import { DEFAULT_CATEGORIES } from "@/lib/categorization/defaults";
 import { db } from "@/lib/db";
 import { ensureTransferCategory } from "@/lib/sync/transfers";
@@ -49,9 +50,13 @@ export async function getCategoryTree(userId: string) {
 
 export type CategoryTree = Awaited<ReturnType<typeof getCategoryTree>>;
 
-/** Lista plana para selects: "Alimentação fora", "Alimentação fora › Delivery", … */
-export function categoryOptions(tree: CategoryTree): { id: string; name: string }[] {
-  return tree.flatMap((parent) => [
+/**
+ * Lista plana para selects: "Alimentação fora", "Alimentação fora › Delivery", …
+ * `gasto` deixa de fora as categorias de entrada; `entrada`, só elas.
+ */
+export function categoryOptions(tree: CategoryTree, only?: "gasto" | "entrada"): { id: string; name: string }[] {
+  const keep = (kind: CategoryKind) => (only === "gasto" ? kind !== "RECEITA" : only === "entrada" ? kind === "RECEITA" : true);
+  return tree.filter((parent) => keep(parent.kind)).flatMap((parent) => [
     { id: parent.id, name: parent.name },
     ...parent.children.map((child) => ({ id: child.id, name: `${parent.name} › ${child.name}` })),
   ]);

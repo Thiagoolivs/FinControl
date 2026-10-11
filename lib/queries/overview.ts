@@ -82,3 +82,17 @@ export async function getBucketTotals(userId: string, query: ScopeQuery) {
     rows.filter((row) => types.includes(row.type)).reduce((sum, row) => sum + (row._sum.balanceCents ?? 0), 0);
   return { reservedCents: total(["RESERVA_IMPOSTO", "RESERVA_CUSTO"]), businessCashCents: total(["CAIXA_PROJETO"]) };
 }
+
+// O cron roda uma vez por dia; mais que isso sem leitura = o serviço não está rodando.
+const CRON_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
+
+/** Saúde do serviço de cron do Railway: quando leu pela última vez e se está rodando. */
+export async function getCronHealth(userId: string, now: Date = new Date()) {
+  const last = await db().syncRun.findFirst({
+    where: { userId, trigger: "CRON" },
+    orderBy: { startedAt: "desc" },
+    select: { startedAt: true },
+  });
+  const lastRunAt = last?.startedAt ?? null;
+  return { lastRunAt, running: lastRunAt !== null && now.getTime() - lastRunAt.getTime() < CRON_STALE_AFTER_MS };
+}

@@ -48,6 +48,8 @@ export function ChatSheet({ open, onOpenChange, title = "Perguntar", children, c
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    // Toque em botão (o X) não é arrasto: capturar o ponteiro desviaria o clique para a alça.
+    if (event.target instanceof Element && event.target.closest("button")) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragStart.current = { y: event.clientY, time: performance.now() };
     setDragging(true);

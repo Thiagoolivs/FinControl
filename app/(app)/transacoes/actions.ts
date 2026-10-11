@@ -5,12 +5,16 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/dal";
 import { GeminiError, isGeminiConfigured } from "@/lib/ai/gemini";
 import { describeRuleError } from "@/lib/rules/action-error";
-import { categorizeGroup, ignoreSuggestion, setTransactionCategory, setTransactionIgnored } from "@/lib/rules/mutations";
+import { acceptAllSuggestions, categorizeGroup, ignoreSuggestion, setTransactionCategory, setTransactionIgnored } from "@/lib/rules/mutations";
 import { suggestWithAi } from "@/lib/rules/suggest";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 import type { ActionState } from "../actions";
 
 const aiLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
+// Lotes por toque no botão: até 120 grupos por vez sem estourar o tempo da requisição.
+const MANUAL_BATCHES = 3;
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
 const groupInput = z.object({
   transactionIds: z.array(z.string().min(1)).min(1).max(500),
@@ -52,13 +56,30 @@ export async function suggestNowAction(): Promise<ActionState> {
   if (!isGeminiConfigured()) return { error: "Defina GEMINI_API_KEY e GEMINI_MODEL no Railway para receber sugestões da IA." };
   if (!aiLimiter.hit(user.id).allowed) return { error: "Muitos pedidos seguidos. Espere um pouco." };
   try {
-    const created = await suggestWithAi(user.id);
+    const run = await suggestWithAi(user.id, MANUAL_BATCHES);
     revalidatePath("/transacoes/revisar");
-    return { notice: created === 0 ? "Nada novo para sugerir." : `${created} ${created === 1 ? "sugestão" : "sugestões"}.` };
+    if (run.groups === 0) return { notice: "Nada novo para sugerir." };
+    const sent = `A IA analisou ${plural(run.groups, "grupo", "grupos")} (${plural(run.transactions, "transação", "transações")}).`;
+    const left =
+      run.remainingGroups === 0
+        ? " Não falta nenhum."
+        : ` Faltam ${plural(run.remainingGroups, "grupo", "grupos")} (${plural(run.remainingTransactions, "transação", "transações")}): toque de novo para continuar.`;
+    return { notice: sent + left };
   } catch (error) {
     if (error instanceof GeminiError) return { error: error.message };
     console.error(error);
     return { error: "A IA não respondeu. Tente de novo em instantes." };
+  }
+}
+
+export async function acceptAllSuggestionsAction(): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    const result = await acceptAllSuggestions(user.id);
+    revalidatePath("/", "layout");
+    return { notice: `${plural(result.rules, "regra criada", "regras criadas")}, ${plural(result.transactions, "transação categorizada", "transações categorizadas")}.` };
+  } catch (error) {
+    return { error: describeRuleError(error) };
   }
 }
 

@@ -35,6 +35,17 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
   const suggestedName = suggestion?.categoryId ? categories.find((category) => category.id === suggestion.categoryId)?.name : null;
   const title = group.transactions[0]?.description ?? group.key;
   const count = group.transactions.length;
+  // Sem mexer na sugestão, o botão é "Aceitar"; mexeu, vira correção.
+  const unchanged =
+    suggestion !== null &&
+    suggestion.categoryId !== null &&
+    categoryId === suggestion.categoryId &&
+    createRule &&
+    pattern.trim() === suggestion.pattern &&
+    matchType === suggestion.matchType;
+  // Sugestão sem categoria (a IA não reconheceu) é como não ter sugestão: não há o que corrigir.
+  const corrected = suggestion?.categoryId != null && !unchanged && createRule;
+  const submitLabel = unchanged ? "Aceitar" : corrected ? "Salvar correção" : createRule ? "Criar regra" : "Categorizar";
 
   function confirm() {
     startTransition(async () => {
@@ -63,10 +74,10 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
         <Money cents={group.totalCents} className="shrink-0 text-[16px] font-[450]" />
       </div>
 
-      {suggestedName ? (
+      {suggestion ? (
         <p className="m-0 flex items-center gap-1.5 text-[13px] text-accent">
           <Icon name="sparkle" size={14} />
-          Sugestão da IA: {suggestedName}
+          {suggestedName ? `Sugestão da IA: ${suggestedName}` : "A IA não reconheceu: escolha a categoria"}
         </p>
       ) : null}
 
@@ -134,7 +145,7 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={confirm} loading={pending} disabled={!categoryId || (createRule && !compiled.ok)} className="flex-1">
-          {createRule ? "Criar regra" : "Categorizar"}
+          {submitLabel}
         </Button>
         {suggestion ? (
           <Button

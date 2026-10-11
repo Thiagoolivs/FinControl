@@ -6,8 +6,8 @@ import { db } from "@/lib/db";
 import { categoryOptions, getCategoryTree } from "./categories";
 import { getReviewQueue } from "./queue";
 
-// Um lote por chamada: suficiente para a fila do dia e barato.
-const MAX_GROUPS = 40;
+// Grupos por chamada ao Gemini. O botão faz alguns lotes seguidos; o sync faz um.
+const BATCH_GROUPS = 40;
 const MAX_EXAMPLES = 3;
 
 const SYSTEM = `Você categoriza gastos de uma pessoa no Brasil a partir da descrição que aparece no extrato.
@@ -48,22 +48,49 @@ const answer = z.object({
   ),
 });
 
+export type SuggestionRun = {
+  /** Grupos e transações que foram para a IA nesta rodada. */
+  groups: number;
+  transactions: number;
+  /** O que ainda está na fila sem sugestão (toque de novo para continuar). */
+  remainingGroups: number;
+  remainingTransactions: number;
+};
+
 /**
- * Pede ao Gemini categoria + padrão para os grupos da fila que ainda não têm sugestão.
- * Só descrições vão para a API (sem valores, sem contas). Nada é gravado como categoria aqui:
- * vira RuleSuggestion pendente, que você aceita, corrige ou ignora na fila.
+ * Pede ao Gemini categoria + padrão para os grupos da fila que ainda não têm sugestão, em até `maxBatches`
+ * lotes. Só descrições vão para a API (sem valores, sem contas). Nada vira categoria aqui: vira
+ * RuleSuggestion pendente, que você aceita, corrige ou ignora na fila.
  */
-export async function suggestWithAi(userId: string): Promise<number> {
-  if (!isGeminiConfigured()) return 0;
+export async function suggestWithAi(userId: string, maxBatches = 1): Promise<SuggestionRun> {
+  const run: SuggestionRun = { groups: 0, transactions: 0, remainingGroups: 0, remainingTransactions: 0 };
+  if (isGeminiConfigured()) {
+    for (let batch = 0; batch < maxBatches; batch += 1) {
+      const sent = await suggestBatch(userId);
+      run.groups += sent.groups;
+      run.transactions += sent.transactions;
+      if (sent.groups === 0) break;
+    }
+  }
+  const left = await groupsWithoutSuggestion(userId);
+  run.remainingGroups = left.length;
+  run.remainingTransactions = left.reduce((sum, group) => sum + group.transactions.length, 0);
+  return run;
+}
+
+/** Grupos da fila sem sugestão pendente e sem sugestão ignorada antes. */
+async function groupsWithoutSuggestion(userId: string) {
   const queue = await getReviewQueue(userId);
-  const pending = queue.filter((group) => group.suggestion === null).slice(0, MAX_GROUPS);
-  if (pending.length === 0) return 0;
-  const alreadySuggested = await db().transaction.count({
-    where: { userId, id: { in: pending.flatMap((group) => group.transactions.map((transaction) => transaction.id)) }, suggestionId: { not: null } },
-  });
-  // Grupo com sugestão ignorada antes não volta para a IA.
-  const groups = alreadySuggested === 0 ? pending : await withoutIgnored(userId, pending);
-  if (groups.length === 0) return 0;
+  return withoutIgnored(
+    userId,
+    queue.filter((group) => group.suggestion === null),
+  );
+}
+
+async function suggestBatch(userId: string): Promise<{ groups: number; transactions: number }> {
+  const pending = (await groupsWithoutSuggestion(userId)).slice(0, BATCH_GROUPS);
+  if (pending.length === 0) return { groups: 0, transactions: 0 };
+  const groups = pending;
 
   const options = categoryOptions(await getCategoryTree(userId));
   const validIds = new Set(options.map((option) => option.id));
@@ -76,7 +103,7 @@ export async function suggestWithAi(userId: string): Promise<number> {
   });
   const result = await generateJson({ system: SYSTEM, prompt, schema, parse: answer });
 
-  let created = 0;
+  const sent = { groups: 0, transactions: 0 };
   for (const suggestion of result.sugestoes) {
     const group = groups[suggestion.grupo];
     if (!group) continue;
@@ -89,11 +116,13 @@ export async function suggestWithAi(userId: string): Promise<number> {
       where: { userId, id: { in: group.transactions.map((transaction) => transaction.id) } },
       data: { suggestionId: row.id },
     });
-    created += 1;
+    sent.groups += 1;
+    sent.transactions += group.transactions.length;
   }
-  return created;
+  return sent;
 }
 
+/** Grupo com sugestão ignorada antes não volta para a IA. */
 async function withoutIgnored<G extends { transactions: { id: string }[] }>(userId: string, groups: G[]): Promise<G[]> {
   const ignored = await db().transaction.findMany({
     where: { userId, id: { in: groups.flatMap((group) => group.transactions.map((transaction) => transaction.id)) }, suggestion: { status: "IGNORADA" } },

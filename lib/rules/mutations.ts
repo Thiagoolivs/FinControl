@@ -40,6 +40,15 @@ export async function createRule(
 ): Promise<{ ruleId: string; changed: number }> {
   assertPattern(input);
   await assertCategory(userId, input.categoryId);
+  // Regra igual já existe (ex.: dois grupos que a IA generalizou para o mesmo padrão): reaproveita.
+  const same = await db().rule.findFirst({
+    where: { userId, pattern: input.pattern.trim(), matchType: input.matchType, direction: input.direction, scope: input.scope, categoryId: input.categoryId },
+    select: { id: true },
+  });
+  if (same) {
+    const changed = await applyRules(userId, options.applyRetroactively ? "automaticas" : "sem-categoria");
+    return { ruleId: same.id, changed };
+  }
   const rule = await db().rule.create({
     data: { userId, ...input, pattern: input.pattern.trim(), origin: options.origin },
     select: { id: true },
@@ -149,6 +158,53 @@ export async function categorizeGroup(
       data: { status: accepted ? "ACEITA" : "CORRIGIDA", resolvedAt: new Date(), ruleId },
     });
   }
+}
+
+/**
+ * Aceita de uma vez todas as sugestões pendentes que têm categoria: cria as regras (IA_CONFIRMADA),
+ * categoriza os grupos e passa as regras novas no resto da fila. Sugestão sem categoria fica para você.
+ */
+export async function acceptAllSuggestions(userId: string): Promise<{ rules: number; transactions: number }> {
+  const suggestions = await db().ruleSuggestion.findMany({
+    where: { userId, status: "PENDENTE", categoryId: { not: null } },
+    select: {
+      id: true,
+      pattern: true,
+      matchType: true,
+      categoryId: true,
+      transactions: { where: { categoryId: null, transferPeerId: null, isIgnored: false }, select: { id: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const categories = new Set((await db().category.findMany({ where: { userId }, select: { id: true } })).map((category) => category.id));
+  const result = { rules: 0, transactions: 0 };
+  const touched: string[] = [];
+  for (const suggestion of suggestions) {
+    const categoryId = suggestion.categoryId;
+    if (!categoryId || !categories.has(categoryId) || !compilePattern(suggestion.pattern, suggestion.matchType).ok) continue;
+    const input = { pattern: suggestion.pattern, matchType: suggestion.matchType, direction: "AMBAS" as const, scope: null, categoryId, priority: DEFAULT_PRIORITY };
+    const existing = await db().rule.findFirst({
+      where: { userId, pattern: input.pattern, matchType: input.matchType, direction: "AMBAS", scope: null, categoryId },
+      select: { id: true },
+    });
+    const ruleId = existing?.id ?? (await db().rule.create({ data: { userId, ...input, origin: "IA_CONFIRMADA" }, select: { id: true } })).id;
+    const ids = suggestion.transactions.map((transaction) => transaction.id);
+    await db().$transaction([
+      ...(existing
+        ? []
+        : [db().auditLog.create({ data: { userId, action: "rule.create", entity: "Rule", entityId: ruleId, after: { ...input }, origin: "AI" } })]),
+      db().transaction.updateMany({ where: { userId, id: { in: ids }, categoryId: null }, data: { categoryId, ruleId } }),
+      db().ruleSuggestion.update({ where: { id: suggestion.id }, data: { status: "ACEITA", resolvedAt: new Date(), ruleId } }),
+    ]);
+    if (!existing) result.rules += 1;
+    result.transactions += ids.length;
+    touched.push(ruleId);
+  }
+  if (touched.length > 0) {
+    result.transactions += await applyRules(userId, "sem-categoria");
+    await refreshHitCounts(userId, touched);
+  }
+  return result;
 }
 
 export async function ignoreSuggestion(userId: string, suggestionId: string): Promise<void> {

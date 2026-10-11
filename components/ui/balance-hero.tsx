@@ -78,7 +78,7 @@ export function BalanceHero({
 }
 
 export type CompositionSegment = {
-  key: "disponivel" | "reservado" | "negocio";
+  key: "disponivel" | "guardado" | "reservado" | "negocio";
   label: string;
   cents: number;
   href?: string;
@@ -86,6 +86,7 @@ export type CompositionSegment = {
 
 const SEGMENT_FILL: Record<CompositionSegment["key"], string> = {
   disponivel: "bg-text-primary",
+  guardado: "bg-positive",
   reservado: "bg-scope-pj",
   negocio: "texture-business",
 };
@@ -95,7 +96,7 @@ type BalanceCompositionProps = {
   total: { label: string; cents: number; href?: string };
 };
 
-/** Saldo bruto dividido em Disponível / Reservado / Caixa do negócio. A legenda carrega os valores. */
+/** Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. A legenda carrega os valores. */
 export function BalanceComposition({ segments, total }: BalanceCompositionProps) {
   const visible = segments.filter((segment) => segment.cents > 0);
   const visibleTotal = visible.reduce((sum, segment) => sum + segment.cents, 0);
@@ -120,7 +121,7 @@ export function BalanceComposition({ segments, total }: BalanceCompositionProps)
               <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
               <span className="flex flex-1 items-center gap-2 text-[15px] font-medium">
                 {segment.label}
-                {segment.key !== "disponivel" ? <ScopeTag scope="PJ" /> : null}
+                {segment.key === "reservado" || segment.key === "negocio" ? <ScopeTag scope="PJ" /> : null}
               </span>
               <Money cents={segment.cents} className={cn("text-[15px]", segment.cents < 0 && "text-negative")} />
             </RowLink>

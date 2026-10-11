@@ -31,6 +31,8 @@ const RECENT_DAYS = 30;
 const HOME_ALERTS = 3;
 
 const ACCOUNT_KIND = { CHECKING: "Conta corrente", SAVINGS: "Poupança", CREDIT: "Cartão", INVESTMENT: "Investimento" } as const;
+const accountTotal = (account: { balanceCents: number; autoInvestedCents: number; savedCents: number }) =>
+  account.balanceCents + account.autoInvestedCents + account.savedCents;
 
 export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
@@ -53,7 +55,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
   const balance = summarizeBalances(accounts);
-  const composition = composeBalance({ grossCents: balance.cashCents, ...buckets });
+  const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
   const cashAccounts = accounts.filter((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const cards = accounts.filter((account) => account.type === "CREDIT");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
@@ -111,10 +113,11 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           <BalanceComposition
             segments={[
               { key: "disponivel", label: "Disponível", cents: composition.availableCents },
+              ...(composition.savedCents > 0 ? [{ key: "guardado" as const, label: "Guardado em caixinhas", cents: composition.savedCents, href: "/contas" }] : []),
               { key: "reservado", label: "Reservado", cents: composition.reservedCents, href: "/reservas" },
               { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents, href: "/negocio" },
             ]}
-            total={{ label: "Saldo nas contas", cents: composition.grossCents }}
+            total={{ label: "Saldo nas contas", cents: composition.grossCents, href: "/contas" }}
           />
         }
       />
@@ -127,7 +130,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           <ul className="m-0 flex list-none flex-col p-0">
             {cashAccounts.map((account) => (
               <li key={account.id}>
-                <RowLink className="min-h-[60px] py-2">
+                <RowLink href="/contas" className="min-h-[60px] py-2">
                   <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                     <span className="flex items-center gap-2 text-[15px] font-medium">
                       <span className="truncate">{account.name}</span>
@@ -138,7 +141,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                       {account.currency !== "BRL" ? ` · ${account.currency}, fora do total` : ""}
                     </span>
                   </span>
-                  <Money cents={account.balanceCents} className={account.balanceCents < 0 ? "text-[17px] text-negative" : "text-[17px]"} />
+                  <Money cents={accountTotal(account)} className={accountTotal(account) < 0 ? "text-[17px] text-negative" : "text-[17px]"} />
                 </RowLink>
               </li>
             ))}

@@ -1,7 +1,16 @@
 import "server-only";
+import { z } from "zod";
 import { addDays, toDbDate, todayLocal } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { type ScopeQuery, scopeWhere } from "./scope";
+
+const savedBoxes = z.array(z.object({ name: z.string(), cents: z.number().int() }));
+
+/** Caixinhas gravadas no sync (Account.savedBoxes). Formato inesperado = nenhuma, sem quebrar a tela. */
+export function savedBoxesOf(value: unknown): { name: string; cents: number }[] {
+  const parsed = savedBoxes.safeParse(value);
+  return parsed.success ? parsed.data : [];
+}
 
 export async function getAccounts(userId: string, query: ScopeQuery) {
   return db().account.findMany({
@@ -13,10 +22,17 @@ export async function getAccounts(userId: string, query: ScopeQuery) {
       type: true,
       scope: true,
       balanceCents: true,
+      autoInvestedCents: true,
+      savedCents: true,
+      savedBoxes: true,
+      closingBalanceCents: true,
+      overdraftLimitCents: true,
+      overdraftUsedCents: true,
       currency: true,
       includeInTotals: true,
       creditLimitCents: true,
-      connection: { select: { institutionName: true } },
+      availableCreditCents: true,
+      connection: { select: { id: true, institutionName: true, lastSyncAt: true } },
     },
     orderBy: [{ type: "asc" }, { balanceCents: "desc" }],
   });

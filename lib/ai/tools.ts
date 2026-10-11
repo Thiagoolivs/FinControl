@@ -79,7 +79,8 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
   getSaldoConsolidado: {
     declaration: {
       name: "getSaldoConsolidado",
-      description: "Saldo de hoje: disponível (o que dá para gastar), reservado (imposto + custo), caixa do negócio e saldo bruto das contas, separados. Também o limite usado dos cartões.",
+      description:
+        "Saldo de hoje: disponível (o que dá para gastar), guardado em caixinhas, reservado (imposto + custo), caixa do negócio e saldo bruto das contas (com aplicação automática e caixinhas), separados. Também o limite usado dos cartões.",
       parameters: object({ scope: SCOPE, consolidated: CONSOLIDATED }),
     },
     run: async (raw, context) => {
@@ -87,17 +88,26 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
       const query = scopeOf(args, context);
       const [accounts, buckets] = await Promise.all([getAccounts(context.userId, query), getBucketTotals(context.userId, query)]);
       const balance = summarizeBalances(accounts);
-      const composition = composeBalance({ grossCents: balance.cashCents, ...buckets });
+      const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
       return {
         escopo: scopeLabel(query),
         disponivel: brl(composition.availableCents),
         reservado: brl(composition.reservedCents),
         caixaNegocio: brl(composition.businessCashCents),
+        guardadoEmCaixinhas: brl(composition.savedCents),
+        aplicacaoAutomatica: brl(balance.autoInvestedCents),
         saldoBrutoContas: brl(composition.grossCents),
         cartoesLimiteUsado: brl(balance.creditUsedCents),
         contas: accounts
           .filter((account) => account.type !== "INVESTMENT")
-          .map((account) => ({ nome: account.name, tipo: account.type, escopo: account.scope, saldo: brl(account.balanceCents) })),
+          .map((account) => ({
+            nome: account.name,
+            tipo: account.type,
+            escopo: account.scope,
+            saldo: brl(account.balanceCents),
+            ...(account.autoInvestedCents ? { aplicacaoAutomatica: brl(account.autoInvestedCents) } : {}),
+            ...(account.savedCents ? { caixinhas: brl(account.savedCents) } : {}),
+          })),
       };
     },
   },

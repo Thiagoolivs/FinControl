@@ -4,6 +4,7 @@ import { AccountMenu } from "@/components/ui/account-menu";
 import { Eyebrow } from "@/components/ui/text";
 
 const ACCOUNT_LINKS = [
+  { href: "/contas", label: "Contas", icon: "bank" },
   { href: "/carteira", label: "Carteira", icon: "wallet" },
   { href: "/alertas", label: "Alertas", icon: "bell" },
   { href: "/config", label: "Config", icon: "sliders" },

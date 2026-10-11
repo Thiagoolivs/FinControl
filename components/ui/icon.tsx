@@ -18,6 +18,7 @@ const PATHS = {
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
   wallet: "M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14h.01",
   bell: "M6 16v-5a6 6 0 1 1 12 0v5l2 2H4zM10 21h4",
+  sliders: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4",
   food: "M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v3H17",
   car: "M5 17h14v-5l-2-5H7l-2 5zM5 12h14M7.5 17v2.5M16.5 17v2.5",
   ticket: "M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4zM14 6v12",

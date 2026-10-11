@@ -7,6 +7,7 @@ import { GeminiError, isGeminiConfigured } from "@/lib/ai/gemini";
 import { describeRuleError } from "@/lib/rules/action-error";
 import { acceptAllSuggestions, categorizeGroup, ignoreSuggestion, setTransactionCategory, setTransactionIgnored } from "@/lib/rules/mutations";
 import { suggestWithAi } from "@/lib/rules/suggest";
+import { assignStreamToGroup, setTransactionBucket, setTransactionStream } from "@/lib/streams/mutations";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 import type { ActionState } from "../actions";
 
@@ -100,6 +101,54 @@ export async function setIgnoredAction(input: { transactionId: string; ignored: 
     await setTransactionIgnored(user.id, input.transactionId, input.ignored);
     revalidatePath("/", "layout");
     return { notice: input.ignored ? "Ignorada: fora dos totais e da fila." : "Voltou a contar." };
+  } catch (error) {
+    return { error: describeRuleError(error) };
+  }
+}
+
+const streamGroupInput = z.object({
+  transactionIds: z.array(z.string().min(1)).min(1).max(500),
+  revenueStreamId: z.string().min(1, "Escolha a stream de receita."),
+  createRule: z.boolean(),
+  pattern: z.string().max(200),
+  matchType: z.enum(["PREFIX", "CONTAINS", "REGEX"]),
+});
+
+export async function assignStreamGroupAction(input: z.input<typeof streamGroupInput>): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = streamGroupInput.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  const data = parsed.data;
+  try {
+    await assignStreamToGroup(user.id, {
+      transactionIds: data.transactionIds,
+      revenueStreamId: data.revenueStreamId,
+      rule: data.createRule ? { pattern: data.pattern, matchType: data.matchType } : null,
+    });
+    revalidatePath("/", "layout");
+    return { notice: "Receita atribuída; reservas lançadas." };
+  } catch (error) {
+    return { error: describeRuleError(error) };
+  }
+}
+
+export async function setStreamAction(input: { transactionId: string; revenueStreamId: string | null }): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    await setTransactionStream(user.id, input.transactionId, input.revenueStreamId || null);
+    revalidatePath("/", "layout");
+    return { notice: input.revenueStreamId ? "Stream salva; reservas lançadas." : "Voltou para a fila de revisão." };
+  } catch (error) {
+    return { error: describeRuleError(error) };
+  }
+}
+
+export async function setBucketAction(input: { transactionId: string; bucketId: string | null }): Promise<ActionState> {
+  const user = await requireUser();
+  try {
+    await setTransactionBucket(user.id, input.transactionId, input.bucketId || null);
+    revalidatePath("/", "layout");
+    return { notice: input.bucketId ? "Saída lançada no bucket." : "Não sai mais de bucket." };
   } catch (error) {
     return { error: describeRuleError(error) };
   }

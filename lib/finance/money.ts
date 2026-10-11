@@ -97,3 +97,19 @@ export function decimalToCents(value: number): number {
   if (!Number.isSafeInteger(result)) throw new RangeError(`Valor fora do intervalo seguro: ${value}`);
   return result === 0 ? 0 : result;
 }
+
+/** "12,5" ou "12.5" → 1250 bps (até duas casas, de 0 a 100%). Null para o resto. */
+export function parsePercentBps(input: string): number | null {
+  const match = /^(\d{1,3})(?:[.,](\d{1,2}))?%?$/.exec(input.replace(/\s/g, ""));
+  if (!match) return null;
+  const bps = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  return bps <= 10_000 ? bps : null;
+}
+
+/** 1250 → "12,5". Para preencher campo e para texto ("12,5%"). */
+export function formatPercentBps(bps: number): string {
+  const whole = Math.trunc(bps / 100);
+  const rest = Math.abs(bps % 100);
+  if (rest === 0) return String(whole);
+  return `${whole},${String(rest).padStart(2, "0").replace(/0$/, "")}`;
+}

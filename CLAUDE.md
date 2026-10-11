@@ -43,6 +43,7 @@ lib/
   preferences.ts  cookie de "ocultar valores" (o estado vive em components/ui/hide-values.tsx)
   categorization/ puro e testado: limpeza de descrição, matcher (sem acento), motor de regras, agrupamento da fila, categorias padrão
   rules/          server-only: aplicar regras, fila de revisão, sugestões da IA, mutações de regra/categoria
+  streams/        server-only: configuração inicial (streams, buckets, DAS), razão dos buckets, mutações e consultas
   ai/             cliente do Gemini (fetch + zod, resposta JSON validada)
   charts/         escalas de gráfico
   security/       rate limit
@@ -66,7 +67,11 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Pluggy: conta bancária mantém o sinal; cartão vem com compra positiva e é invertido na ingestão. Dedup por `pluggyTransactionId`; PENDING que some da janela lida é removida.
 - Transferência = par saída/entrada de mesmo valor em contas diferentes, até 3 dias (`lib/finance/transfers.ts`); as duas pernas apontam uma para a outra (`transferPeerId`) e recebem a categoria de sistema `TRANSFERENCIA`. Saída de cartão nunca é perna.
 - Categorização: depois de cada sync, pareamento de transferências e então regras no que sobrou sem categoria. A primeira regra (menor prioridade; empate = mais antiga) que casa com a descrição limpa ou a original decide. O que foi categorizado por regra é sempre o que as regras dizem agora (editar/desligar/reordenar refaz); categoria escolhida à mão nunca é tocada.
-- Fila de revisão = saídas sem categoria, sem transferência, não ignoradas, agrupadas por `groupKey`. Entradas ficam para as streams (fase 4).
+- Fila de revisão = saídas sem categoria e entradas sem stream nem categoria; sem transferência, não ignoradas, agrupadas por `groupKey`.
+- Receita: entrada recebe **stream** (`revenueStreamId`), não categoria; entrada com categoria (estorno, reembolso) não é receita. Regra de saída precisa de categoria; o bucket da regra é só "pago com".
+- Buckets: `balanceCents` é cache de Σ `BucketEntry` (`refreshBucketBalances`). Entrada com stream gera `ALOCACAO` pelos % da stream (`splitIncome`: reservas arredondadas no meio centavo, o resto fecha a soma); em stream `VENTURE` o resto vai para o caixa do negócio até uma `RETIRADA`. Saída paga com bucket = `PAGAMENTO`. Ajuste manual = `AJUSTE` com a diferença.
+- Disponível = saldo das contas − reservas (imposto + custo) − caixa do negócio.
+- DAS = `FixedObligation`: `OBRIGACAO_FIXA` uma vez por competência (único por obrigação + mês), do mês em que foi criada até hoje. O pagamento cai na regra do DAS, que paga com a reserva de imposto.
 - IA só sugere (RuleSuggestion pendente); só descrições vão ao Gemini, sem valores. O sync manda um lote (40 grupos); o botão da fila manda até 3 e diz quanto falta. "Aceitar todas" cria as regras das sugestões com categoria; regra idêntica é reaproveitada, nunca duplicada.
 - Limpeza de descrição é idempotente e roda de novo no histórico a cada boot (`lib/rules/reclean.ts`): mudar `clean.ts` vale para tudo no próximo deploy. Regra criada de sugestão aceita sem mudança = `IA_CONFIRMADA` e vai para o `AuditLog` com origem `AI`.
 - Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.

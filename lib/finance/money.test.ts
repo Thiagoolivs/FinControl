@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertCents, centsParts, decimalToCents, formatCents, formatCentsCompact, parseCents } from "./money";
+import { assertCents, centsParts, decimalToCents, formatCents, formatCentsCompact, formatPercentBps, parseCents, parsePercentBps } from "./money";
 
 describe("assertCents", () => {
   it("aceita inteiros seguros", () => {
@@ -133,5 +133,34 @@ describe("decimalToCents", () => {
     expect(() => decimalToCents(Number.NaN)).toThrow(RangeError);
     expect(() => decimalToCents(Number.POSITIVE_INFINITY)).toThrow(RangeError);
     expect(() => decimalToCents(1e21)).toThrow(RangeError);
+  });
+});
+
+describe("parsePercentBps", () => {
+  it.each([
+    ["12", 1200],
+    ["12,5", 1250],
+    ["12.25", 1225],
+    ["0", 0],
+    ["100", 10000],
+    [" 6 %", 600],
+  ])("%s → %i", (input, expected) => {
+    expect(parsePercentBps(input)).toBe(expected);
+  });
+
+  it.each(["", "abc", "100,01", "12,345", "-5"])("rejeita %s", (input) => {
+    expect(parsePercentBps(input)).toBeNull();
+  });
+});
+
+describe("formatPercentBps", () => {
+  it.each([
+    [1200, "12"],
+    [1250, "12,5"],
+    [1225, "12,25"],
+    [5, "0,05"],
+    [0, "0"],
+  ])("%i → %s", (bps, expected) => {
+    expect(formatPercentBps(bps)).toBe(expected);
   });
 });

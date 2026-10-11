@@ -42,11 +42,13 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
   const groups = groupByDay(list.rows, today, (row) => {
     const category = isTransferRow(row)
       ? "transferência entre contas"
-      : row.category
-        ? row.category.parent
-          ? `${row.category.parent.name} › ${row.category.name}`
-          : row.category.name
-        : "sem categoria";
+      : row.revenueStream
+        ? row.revenueStream.name
+        : row.category
+          ? row.category.parent
+            ? `${row.category.parent.name} › ${row.category.name}`
+            : row.category.name
+          : "sem categoria";
     const meta = [row.account.name, category, row.isIgnored ? "ignorada" : null].filter(Boolean).join(" · ");
     return toTransactionItem(row, meta, `/transacoes/${row.id}`);
   });

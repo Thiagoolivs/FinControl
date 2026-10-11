@@ -18,6 +18,11 @@ describe("compilePattern", () => {
     expect(matches("pao de acucar", "CONTAINS", "COMPRA  PAO   DE ACUCAR 123")).toBe(true);
   });
 
+  it("ignora acentos dos dois lados", () => {
+    expect(matches("padaria são joão", "PREFIX", "PADARIA SAO JOAO LTDA")).toBe(true);
+    expect(matches("ACUCAR", "CONTAINS", "Pão de Açúcar")).toBe(true);
+  });
+
   it("REGEX usa a expressão como está", () => {
     expect(matches("^UBER\\s*\\*?TRIP", "REGEX", "UBER *TRIP 8812")).toBe(true);
     expect(matches("^UBER\\s*\\*?TRIP", "REGEX", "PAG UBER TRIP")).toBe(false);

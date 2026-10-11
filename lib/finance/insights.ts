@@ -1,6 +1,6 @@
 import { assertCents } from "./money";
 import type { MonthFlow } from "./month-flow";
-import { formatBps, shareBps } from "./share";
+import { formatBps, shareBps, variationBps } from "./share";
 
 /** Texto com valores: o valor vai como número para a tela formatar (e esconder, com "ocultar valores"). */
 export type InsightPart = string | { cents: number };
@@ -50,4 +50,38 @@ export function monthInsights(input: InsightInput): Insight[] {
     insights.push({ key: "sem", tone: "neutral", parts: [{ cents: flow.uncategorizedCents }, " ainda sem categoria. Categorize para o quadro ficar completo."] });
   }
   return insights;
+}
+
+export type HighlightCandidate = { id: string; name: string; icon: string; cents: number; lastMonthToDateCents: number | null };
+
+export type Highlight = HighlightCandidate & {
+  /** Variação sobre o mesmo ponto do mês passado, em bps; null sem base. */
+  variationBps: number | null;
+  /** "cresceu": passou do limite do usuário; "maior": só o maior gasto. */
+  reason: "cresceu" | "maior";
+};
+
+/**
+ * A manchete do mês: entre os gastos de estilo de vida, o maior que cresceu além do limite do usuário
+ * (`growthThresholdBps`, vindo da regra "acima da média") sobre o mesmo ponto do mês passado; sem nenhum
+ * assim, o maior. Só disputa o que pesa: pelo menos um quarto do maior candidato.
+ */
+export function pickHighlight(candidates: readonly HighlightCandidate[], growthThresholdBps: number | null): Highlight | null {
+  const positive = candidates.filter((candidate) => {
+    assertCents(candidate.cents);
+    return candidate.cents > 0;
+  });
+  if (positive.length === 0) return null;
+  const bySize = [...positive].sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name, "pt-BR"));
+  const largest = bySize[0] as HighlightCandidate;
+  const withVariation = bySize.map((candidate) => ({
+    ...candidate,
+    variationBps: candidate.lastMonthToDateCents === null ? null : variationBps(candidate.lastMonthToDateCents, candidate.cents),
+  }));
+  const grown =
+    growthThresholdBps === null
+      ? undefined
+      : withVariation.find((candidate) => candidate.variationBps !== null && candidate.variationBps >= growthThresholdBps && candidate.cents * 4 >= largest.cents);
+  if (grown) return { ...grown, reason: "cresceu" };
+  return { ...(withVariation[0] as HighlightCandidate & { variationBps: number | null }), reason: "maior" };
 }

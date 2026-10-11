@@ -5,11 +5,12 @@ import { Eyebrow, ScopeTag } from "@/components/ui/text";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, localDateOf } from "@/lib/dates";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
-import { getConnections } from "@/lib/queries/overview";
+import { getConnections, getCronHealth } from "@/lib/queries/overview";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
 import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
+import { CronReminder } from "./cron-reminder";
 
 const longDate = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
@@ -19,7 +20,11 @@ function formatLocalDate(instant: Date): string {
 
 export default async function ConfigPage() {
   const user = await requireUser();
-  const [connections, rules] = await Promise.all([getConnections(user.id), connectionAlertRules(user.id)]);
+  const [connections, rules, cron] = await Promise.all([
+    getConnections(user.id),
+    connectionAlertRules(user.id),
+    getCronHealth(user.id),
+  ]);
   const configured = isPluggyConfigured();
 
   return (
@@ -44,6 +49,8 @@ export default async function ConfigPage() {
             body="Defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET nas variáveis do serviço no Railway e reinicie."
           />
         ) : null}
+
+        {configured && connections.length > 0 ? <CronReminder lastRunAt={cron.lastRunAt} running={cron.running} /> : null}
 
         {connections.length > 0 ? (
           <ul className="m-0 flex list-none flex-col gap-3 p-0">

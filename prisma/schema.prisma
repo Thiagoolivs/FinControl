@@ -445,20 +445,21 @@ model RuleSuggestion {
 // Recorrência detectada (±10% de valor, mesmo intervalo, 3+ ocorrências).
 // Base da projeção e do alerta "assinatura nova" (firstDetectedAt).
 model RecurringSeries {
-  id               String           @id @default(cuid())
+  id               String            @id @default(cuid())
   userId           String
   scope            Scope
   key              String // descrição limpa normalizada + sentido
   avgAmountCents   Int // sinal = sentido
   intervalDays     Int // 30 mensal, 7 semanal, 365 anual
   occurrences      Int
-  lastDate         DateTime         @db.Date
-  nextExpectedDate DateTime         @db.Date
-  status           RecurrenceStatus @default(ATIVA)
+  lastDate         DateTime          @db.Date
+  nextExpectedDate DateTime          @db.Date
+  status           RecurrenceStatus  @default(ATIVA)
+  userStatus       RecurrenceStatus? // decisão do usuário: ATIVA força, ENCERRADA descarta; a detecção não sobrescreve
   categoryId       String?
   revenueStreamId  String?
-  firstDetectedAt  DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  firstDetectedAt  DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)

@@ -3,8 +3,9 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ChatBubble, ChatButton, ChatComposer, ChatSheet } from "@/components/ui/chat-sheet";
+import { ConfirmationCard } from "@/components/ui/confirmation-card";
 import { useValuesHidden } from "@/components/ui/hide-values";
-import { type ChatMessageView, clearChatAction, loadChatAction, sendChatAction } from "./chat-actions";
+import { type ChatMessageView, cancelProposalAction, clearChatAction, confirmProposalAction, loadChatAction, sendChatAction } from "./chat-actions";
 
 const MONEY = /[−-]?R\$\s?\d[\d.]*(?:,\d{2})?/g;
 
@@ -22,6 +23,33 @@ function ModelText({ text }: { text: string }) {
         </p>
       ))}
     </>
+  );
+}
+
+type Proposal = ChatMessageView["proposals"][number];
+
+/** Proposta da IA: o card mostra a prévia; só o clique em Confirmar grava. */
+function ProposalCard({ proposal }: { proposal: Proposal }) {
+  const hidden = useValuesHidden();
+  const [status, setStatus] = useState(proposal.status);
+  const [error, setError] = useState<string>();
+  const mask = (text: string) => (hidden ? text.replace(MONEY, "R$ ••••") : text);
+  const resolve = async (action: (id: string) => Promise<{ status?: Proposal["status"]; error?: string }>) => {
+    const result = await action(proposal.id);
+    setError(result.error);
+    if (result.status) setStatus(result.status);
+    if (result.error?.includes("expirou")) setStatus("expired");
+  };
+  return (
+    <ConfirmationCard
+      tone="elevated"
+      title={proposal.preview.title}
+      rows={proposal.preview.rows.map((row) => ({ ...row, value: mask(row.value) }))}
+      status={status}
+      error={error}
+      onConfirm={() => resolve(confirmProposalAction)}
+      onCancel={() => resolve(cancelProposalAction)}
+    />
   );
 }
 
@@ -52,7 +80,7 @@ export function Chat() {
 
   function send(text: string) {
     setError(null);
-    const optimistic: ChatMessageView = { id: `local-${Date.now()}`, role: "user", text, tools: [] };
+    const optimistic: ChatMessageView = { id: `local-${Date.now()}`, role: "user", text, tools: [], proposals: [] };
     setMessages((current) => [...(current ?? []), optimistic]);
     startTransition(async () => {
       const result = await sendChatAction({ text, escopo: params.get("escopo") });
@@ -105,6 +133,9 @@ export function Chat() {
             {messages.map((message) => (
               <ChatBubble key={message.id} role={message.role}>
                 {message.role === "model" ? <ModelText text={message.text} /> : message.text}
+                {message.proposals.map((proposal) => (
+                  <ProposalCard key={proposal.id} proposal={proposal} />
+                ))}
               </ChatBubble>
             ))}
             {pending ? (

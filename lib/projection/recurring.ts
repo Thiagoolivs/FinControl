@@ -2,9 +2,14 @@ import "server-only";
 import { addDays, fromDbDate, todayLocal, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { groupKey } from "@/lib/categorization/queue";
-import { detectRecurring } from "@/lib/finance/recurring";
+import { detectRecurring, nextOccurrence } from "@/lib/finance/recurring";
 
 const HISTORY_DAYS = 760;
+
+/** Chave da série (sem o escopo): sentido + descrição agrupada. A mesma da detecção e da marcação manual. */
+export function recurringKey(amountCents: number, descriptionClean: string): string {
+  return `${amountCents > 0 ? "E" : "S"}:${groupKey(descriptionClean)}`;
+}
 
 /**
  * Detecta as séries recorrentes (receitas e despesas) e grava em RecurringSeries, ligando as transações.
@@ -40,18 +45,27 @@ export async function refreshRecurringSeries(userId: string, today: string = tod
     if (row.amountCents < 0) return true;
     return row.categoryId === null && row.revenueStream?.type !== "PROJETO" && row.revenueStream?.type !== "VENTURE";
   });
-  const keyOf = (row: (typeof eligible)[number]) => `${row.scope}|${row.amountCents > 0 ? "E" : "S"}:${groupKey(row.descriptionClean)}`;
+  const keyOf = (row: (typeof eligible)[number]) => `${row.scope}|${recurringKey(row.amountCents, row.descriptionClean)}`;
   const byId = new Map(eligible.map((row) => [row.id, row]));
   const detected = detectRecurring(
     eligible.map((row) => ({ id: row.id, key: keyOf(row), date: fromDbDate(row.date), amountCents: row.amountCents })),
     today,
   );
 
-  const existing = await db().recurringSeries.findMany({ where: { userId }, select: { id: true, scope: true, key: true } });
+  const existing = await db().recurringSeries.findMany({
+    where: { userId },
+    select: { id: true, scope: true, key: true, userStatus: true, intervalDays: true, nextExpectedDate: true },
+  });
+  const decisionOf = new Map(existing.map((series) => [`${series.scope}|${series.key}`, series.userStatus]));
   const seen = new Set<string>();
-  await db().transaction.updateMany({ where: { userId, recurringSeriesId: { not: null } }, data: { recurringSeriesId: null, isRecurring: false } });
+  // Ligações refeitas a cada leitura, menos as das séries que o usuário marcou como recorrentes.
+  await db().transaction.updateMany({
+    where: { userId, recurringSeriesId: { not: null }, recurringSeries: { OR: [{ userStatus: null }, { userStatus: "ENCERRADA" }] } },
+    data: { recurringSeriesId: null, isRecurring: false },
+  });
   for (const series of detected) {
     const [scope, key] = series.key.split("|") as ["PF" | "PJ", string];
+    const decision = decisionOf.get(series.key) ?? null;
     const latest = byId.get(series.transactionIds[series.transactionIds.length - 1] ?? "");
     const data = {
       avgAmountCents: series.avgAmountCents,
@@ -59,7 +73,8 @@ export async function refreshRecurringSeries(userId: string, today: string = tod
       occurrences: series.occurrences,
       lastDate: toDbDate(series.lastDate),
       nextExpectedDate: toDbDate(series.nextExpectedDate),
-      status: series.active ? ("ATIVA" as const) : ("ENCERRADA" as const),
+      // A decisão do usuário vale mais que a detecção.
+      status: decision ?? (series.active ? ("ATIVA" as const) : ("ENCERRADA" as const)),
       categoryId: latest?.categoryId ?? null,
       revenueStreamId: latest?.revenueStreamId ?? null,
     };
@@ -70,10 +85,20 @@ export async function refreshRecurringSeries(userId: string, today: string = tod
       select: { id: true },
     });
     seen.add(saved.id);
-    await db().transaction.updateMany({ where: { userId, id: { in: series.transactionIds } }, data: { recurringSeriesId: saved.id, isRecurring: true } });
+    if (decision !== "ENCERRADA") {
+      await db().transaction.updateMany({ where: { userId, id: { in: series.transactionIds } }, data: { recurringSeriesId: saved.id, isRecurring: true } });
+    }
   }
   // Série que deixou de ser detectada (mudou de valor, sumiu): encerrada, sem apagar o histórico.
-  const gone = existing.filter((series) => !seen.has(series.id)).map((series) => series.id);
-  if (gone.length > 0) await db().recurringSeries.updateMany({ where: { userId, id: { in: gone } }, data: { status: "ENCERRADA" } });
+  // A que o usuário marcou como recorrente continua, com a próxima data rolando para a frente.
+  const gone = existing.filter((series) => !seen.has(series.id));
+  const auto = gone.filter((series) => series.userStatus === null).map((series) => series.id);
+  if (auto.length > 0) await db().recurringSeries.updateMany({ where: { userId, id: { in: auto } }, data: { status: "ENCERRADA" } });
+  for (const series of gone.filter((item) => item.userStatus === "ATIVA")) {
+    const cadence = series.intervalDays === 7 ? 7 : series.intervalDays === 365 ? 365 : 30;
+    let next = fromDbDate(series.nextExpectedDate);
+    while (next < today) next = nextOccurrence(next, cadence);
+    await db().recurringSeries.updateMany({ where: { id: series.id, userId }, data: { status: "ATIVA", nextExpectedDate: toDbDate(next) } });
+  }
   return detected.filter((series) => series.active).length;
 }

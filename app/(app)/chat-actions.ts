@@ -1,16 +1,19 @@
 "use server";
 
-import { askChat, type ChatTurn, clearChat, getChatHistory, MAX_MESSAGE_LENGTH } from "@/lib/ai/chat";
+import { revalidatePath } from "next/cache";
+import { askChat, type ChatTurn, clearChat, getChatHistory, MAX_MESSAGE_LENGTH, type ProposalView } from "@/lib/ai/chat";
 import { GeminiError, isGeminiConfigured } from "@/lib/ai/gemini";
+import { cancelProposal, confirmProposal, ProposalError } from "@/lib/ai/proposals";
+import { RuleInputError } from "@/lib/rules/mutations";
 import { requireUser } from "@/lib/auth/dal";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 
 const chatLimiter = createRateLimiter({ limit: 40, windowMs: 60 * 60 * 1000 });
 
-export type ChatMessageView = { id: string; role: "user" | "model"; text: string; tools: string[] };
+export type ChatMessageView = { id: string; role: "user" | "model"; text: string; tools: string[]; proposals: ProposalView[] };
 
-const toView = (turn: ChatTurn): ChatMessageView => ({ id: turn.id, role: turn.role, text: turn.text, tools: turn.tools });
+const toView = (turn: ChatTurn): ChatMessageView => ({ id: turn.id, role: turn.role, text: turn.text, tools: turn.tools, proposals: turn.proposals });
 
 export async function loadChatAction(): Promise<{ configured: boolean; messages: ChatMessageView[] }> {
   const user = await requireUser();
@@ -38,4 +41,29 @@ export async function sendChatAction(input: { text: string; escopo: string | nul
 export async function clearChatAction(): Promise<void> {
   const user = await requireUser();
   await clearChat(user.id);
+}
+
+/** Confirmar executa o que está gravado na proposta; o cliente só manda o id. */
+export async function confirmProposalAction(proposalId: string): Promise<{ status?: ProposalView["status"]; error?: string }> {
+  const user = await requireUser();
+  if (typeof proposalId !== "string" || !proposalId) return { error: "Proposta inválida." };
+  try {
+    await confirmProposal(user.id, proposalId);
+    revalidatePath("/", "layout");
+    return { status: "confirmed" };
+  } catch (error) {
+    if (error instanceof ProposalError || error instanceof RuleInputError) return { error: error.message };
+    console.error("Proposta falhou:", error);
+    return { error: "Não deu para aplicar. Nada foi alterado." };
+  }
+}
+
+export async function cancelProposalAction(proposalId: string): Promise<{ status?: ProposalView["status"]; error?: string }> {
+  const user = await requireUser();
+  try {
+    await cancelProposal(user.id, proposalId);
+    return { status: "cancelled" };
+  } catch (error) {
+    return { error: error instanceof ProposalError ? error.message : "Não deu para cancelar." };
+  }
 }

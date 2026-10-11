@@ -16,6 +16,7 @@ import { ensureStreamsSetup } from "@/lib/streams/setup";
 import { suggestWithAi } from "@/lib/rules/suggest";
 import { raiseConnectionAlerts } from "./alerts";
 import { ingestTransactions, upsertAccount, upsertBills } from "./ingest";
+import { syncInvestments } from "./investments";
 import { detectTransfers } from "./transfers";
 
 /** Cooldown do botão "Atualizar" (só gatilho MANUAL conta). */
@@ -25,7 +26,7 @@ const STALE_RUN_MS = 15 * 60 * 1000;
 // Leituras seguintes cobrem esta janela: pendentes que viram lançamento e lançamentos que chegam atrasados.
 const INCREMENTAL_WINDOW_DAYS = 60;
 
-export type SyncStats = { contas: number; novas: number; atualizadas: number; removidas: number; faturas: number; avisos: string[] };
+export type SyncStats = { contas: number; novas: number; atualizadas: number; removidas: number; faturas: number; investimentos?: number; avisos: string[] };
 
 export type ConnectionOutcome =
   | { connectionId: string; institutionName: string; ok: true; stats: SyncStats }
@@ -124,6 +125,12 @@ async function syncConnection(
           stats.avisos.push(`Faturas de ${wire.name}: ${message(error)}`);
         }
       }
+    }
+    try {
+      stats.investimentos = await syncInvestments(connection);
+    } catch (error) {
+      // Investimento é extra: o MeuPluggy pode não ter, e isso não derruba a leitura das contas.
+      stats.avisos.push(`Investimentos: ${message(error)}`);
     }
     await db().syncRun.update({
       where: { id: run.id },

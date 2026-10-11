@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsReconnect, toAccountType, toConnectionStatus, toLocalDate, toTransactionCents } from "./normalize";
+import { needsReconnect, toAccountType, toAssetClass, toConnectionStatus, toLocalDate, toQuantity, toTransactionCents } from "./normalize";
 
 describe("toConnectionStatus", () => {
   it("mapeia os status da Pluggy", () => {
@@ -67,5 +67,31 @@ describe("toLocalDate", () => {
 
   it("rejeita data inválida", () => {
     expect(() => toLocalDate("ontem")).toThrow(RangeError);
+  });
+});
+
+describe("toAssetClass", () => {
+  it.each([
+    ["EQUITY", "STOCK", "ACAO"],
+    ["EQUITY", "REAL_ESTATE_FUND", "FII"],
+    ["ETF", null, "ACAO"],
+    ["FIXED_INCOME", "CDB", "RENDA_FIXA"],
+    ["SECURITY", "TREASURY", "RENDA_FIXA"],
+    ["COE", null, "RENDA_FIXA"],
+    ["MUTUAL_FUND", "MULTIMARKET_FUND", "FUNDO"],
+    ["OTHER", "CRYPTOCURRENCY", "CRIPTO"],
+    ["OTHER", null, "FUNDO"],
+  ])("%s/%s → %s", (type, subtype, expected) => {
+    expect(toAssetClass(type, subtype)).toBe(expected);
+  });
+});
+
+describe("toQuantity", () => {
+  it("texto decimal sem notação científica", () => {
+    expect(toQuantity(100)).toBe("100");
+    expect(toQuantity(12.5)).toBe("12.5");
+    expect(toQuantity(0.00000012)).toBe("0.00000012");
+    expect(toQuantity(null)).toBe("0");
+    expect(toQuantity(-1)).toBe("0");
   });
 });

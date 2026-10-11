@@ -193,31 +193,32 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  sessions          Session[]
-  connections       Connection[]
-  syncRuns          SyncRun[]
-  accounts          Account[]
-  bills             CreditCardBill[]
-  transactions      Transaction[]
-  categories        Category[]
-  rules             Rule[]
-  ruleSuggestions   RuleSuggestion[]
-  recurringSeries   RecurringSeries[]
-  revenueStreams    RevenueStream[]
-  buckets           Bucket[]
-  bucketEntries     BucketEntry[]
-  fixedObligations  FixedObligation[]
-  goals             Goal[]
-  goalContributions GoalContribution[]
-  goalSnapshots     GoalSnapshot[]
-  holdings          Holding[]
-  allocationTargets AllocationTarget[]
-  alerts            Alert[]
-  alertRules        AlertRule[]
-  pushSubscriptions PushSubscription[]
-  chatMessages      ChatMessage[]
-  aiProposals       AiProposal[]
-  auditLogs         AuditLog[]
+  sessions           Session[]
+  connections        Connection[]
+  syncRuns           SyncRun[]
+  accounts           Account[]
+  bills              CreditCardBill[]
+  transactions       Transaction[]
+  categories         Category[]
+  rules              Rule[]
+  ruleSuggestions    RuleSuggestion[]
+  recurringSeries    RecurringSeries[]
+  revenueStreams     RevenueStream[]
+  buckets            Bucket[]
+  bucketEntries      BucketEntry[]
+  fixedObligations   FixedObligation[]
+  goals              Goal[]
+  goalContributions  GoalContribution[]
+  goalSnapshots      GoalSnapshot[]
+  portfolioSnapshots PortfolioSnapshot[]
+  holdings           Holding[]
+  allocationTargets  AllocationTarget[]
+  alerts             Alert[]
+  alertRules         AlertRule[]
+  pushSubscriptions  PushSubscription[]
+  chatMessages       ChatMessage[]
+  aiProposals        AiProposal[]
+  auditLogs          AuditLog[]
 }
 
 model Session {
@@ -628,6 +629,7 @@ model Holding {
   origin             HoldingOrigin
   quantity           Decimal       @db.Decimal(28, 10) // quantidade, não dinheiro: cripto e cotas são fracionárias
   avgPriceCents      Int
+  costCents          Int           @default(0) // custo total (amountOriginal da Pluggy); o preço médio sai dele
   currentValueCents  Int? // valor da Pluggy (renda fixa, fundos); ação/FII/cripto usam Quote
   maturityDate       DateTime?     @db.Date
   indexer            String? // "CDI", "IPCA", "PRE", como vem da Pluggy
@@ -651,6 +653,20 @@ model AllocationTarget {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, assetClass])
+}
+
+// Foto diária da carteira: base da rentabilidade no período (comparada ao CDI).
+model PortfolioSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  date       DateTime @db.Date
+  valueCents Int
+  costCents  Int
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
 }
 
 // Cache da brapi, global (não é dado do usuário). TTL 12h, preenchido só pelo cron.

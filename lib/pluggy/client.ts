@@ -75,6 +75,22 @@ const bill = z.object({
   minimumPaymentAmount: z.number().nullish(),
 });
 
+const investment = z.object({
+  id: z.string(),
+  code: z.string().nullish(),
+  name: z.string(),
+  type: z.string(),
+  subtype: z.string().nullish(),
+  balance: z.number().nullish(),
+  amount: z.number().nullish(),
+  amountOriginal: z.number().nullish(),
+  quantity: z.number().nullish(),
+  value: z.number().nullish(),
+  currencyCode: z.string().nullish(),
+  dueDate: z.string().nullish(),
+  rateType: z.string().nullish(),
+  status: z.string().nullish(),
+});
 const consent = z.object({ expiresAt: z.string().nullish(), revokedAt: z.string().nullish() });
 
 const page = <T extends z.ZodType>(entry: T) =>
@@ -86,6 +102,7 @@ export type PluggyAccount = z.infer<typeof account>;
 export type PluggyTransaction = z.infer<typeof transaction>;
 export type PluggyBill = z.infer<typeof bill>;
 export type PluggyConsent = z.infer<typeof consent>;
+export type PluggyInvestment = z.infer<typeof investment>;
 
 const PLUGGY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -206,6 +223,11 @@ export async function fetchTransactions(accountId: string, dateFrom?: string): P
 
 export function fetchBills(accountId: string): Promise<PluggyBill[]> {
   return allPages(`/bills?accountId=${encodeURIComponent(accountId)}`, bill, `faturas da conta ${accountId}`);
+}
+
+/** Posições de investimento do item (renda fixa, ações, FII, fundos). */
+export function fetchInvestments(itemId: string): Promise<PluggyInvestment[]> {
+  return allPages(`/investments?itemId=${encodeURIComponent(itemId)}`, investment, `investimentos do item ${itemId}`);
 }
 
 /** Consentimento do Open Finance por trás do item (no MeuPluggy, o do banco). */

@@ -5,7 +5,7 @@ import { addDays, fromDbDate, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { decimalToCents } from "@/lib/finance/money";
 import type { PluggyAccount, PluggyBill, PluggyTransaction } from "@/lib/pluggy/client";
-import { toAccountType, toLocalDate, toTransactionCents } from "@/lib/pluggy/normalize";
+import { toAccountType, toBankExtras, toLocalDate, toTransactionCents } from "@/lib/pluggy/normalize";
 import { unpairTransfers } from "./transfers";
 
 const CHUNK = 500;
@@ -27,6 +27,7 @@ export async function upsertAccount(
 ): Promise<LocalAccount | null> {
   const type = toAccountType(wire.type, wire.subtype);
   if (!type) return null;
+  const extras = toBankExtras(type === "CREDIT" ? null : wire.bankData, wire.currencyCode);
   const data = {
     connectionId: connection.id,
     type,
@@ -36,6 +37,7 @@ export async function upsertAccount(
     currency: wire.currencyCode,
     creditLimitCents: nullableCents(wire.creditData?.creditLimit),
     availableCreditCents: nullableCents(wire.creditData?.availableCreditLimit),
+    ...extras,
   };
   const existing = await db().account.findUnique({ where: { pluggyAccountId: wire.id }, select: { id: true, userId: true } });
   if (existing && existing.userId !== connection.userId) throw new Error(`Conta ${wire.id} pertence a outro usuário.`);

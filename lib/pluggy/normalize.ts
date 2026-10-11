@@ -79,3 +79,46 @@ export function toQuantity(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value) || value <= 0) return "0";
   return value.toFixed(10).replace(/\.?0+$/, "");
 }
+
+export type BankExtras = {
+  autoInvestedCents: number;
+  savedCents: number;
+  /** Caixinhas (saldo reservado) com nome, para a tela de contas. Sem nome = "Saldo reservado" (ex.: bloqueio judicial). */
+  savedBoxes: { name: string; cents: number }[];
+  closingBalanceCents: number | null;
+  overdraftLimitCents: number | null;
+  overdraftUsedCents: number | null;
+};
+
+type WireBankData = {
+  closingBalance?: number | null;
+  automaticallyInvestedBalance?: number | null;
+  overdraftContractedLimit?: number | null;
+  overdraftUsedLimit?: number | null;
+  reservedBalances?: { name?: string | null; availableAmounts?: { amount: number; currencyCode?: string | null }[] | null }[] | null;
+};
+
+const optionalCents = (value: number | null | undefined): number | null => (value == null ? null : decimalToCents(value));
+
+/**
+ * O que o `balance` da Pluggy não traz: aplicação automática e caixinhas (saldo reservado), mais cheque
+ * especial e o "saldo disponível" do banco. Caixinha em outra moeda fica de fora (não há câmbio aqui).
+ */
+export function toBankExtras(bankData: WireBankData | null | undefined, currency: string): BankExtras {
+  const savedBoxes = (bankData?.reservedBalances ?? [])
+    .map((reserve) => ({
+      name: reserve.name?.trim() || "Saldo reservado",
+      cents: (reserve.availableAmounts ?? [])
+        .filter((amount) => (amount.currencyCode ?? currency) === currency)
+        .reduce((sum, amount) => sum + decimalToCents(amount.amount), 0),
+    }))
+    .filter((box) => box.cents !== 0);
+  return {
+    autoInvestedCents: optionalCents(bankData?.automaticallyInvestedBalance) ?? 0,
+    savedCents: savedBoxes.reduce((sum, box) => sum + box.cents, 0),
+    savedBoxes,
+    closingBalanceCents: optionalCents(bankData?.closingBalance),
+    overdraftLimitCents: optionalCents(bankData?.overdraftContractedLimit),
+    overdraftUsedCents: optionalCents(bankData?.overdraftUsedLimit),
+  };
+}

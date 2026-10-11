@@ -292,6 +292,13 @@ model Account {
   name                 String
   number               String? // mascarado, como vem da Pluggy
   balanceCents         Int // CREDIT: limite usado (balance da Pluggy), positivo; inclui parcelas futuras
+  // O que o balance da Pluggy não traz (bankData). Saldo nas contas = balance + aplicação automática + caixinhas.
+  autoInvestedCents    Int         @default(0) // aplicação automática: entra no disponível
+  savedCents           Int         @default(0) // caixinhas / saldo reservado: fica fora do disponível
+  savedBoxes           Json? // [{ name, cents }] das caixinhas, para a tela de contas
+  closingBalanceCents  Int? // "saldo disponível" que o banco também informa; só exibido
+  overdraftLimitCents  Int? // cheque especial contratado
+  overdraftUsedCents   Int? // cheque especial em uso
   currency             String      @default("BRL")
   creditLimitCents     Int?
   availableCreditCents Int?

@@ -51,6 +51,22 @@ const account = z.object({
   balance: z.number(),
   currencyCode: z.string(),
   creditData: z.object({ availableCreditLimit: z.number().nullish(), creditLimit: z.number().nullish() }).nullish(),
+  bankData: z
+    .object({
+      closingBalance: z.number().nullish(),
+      automaticallyInvestedBalance: z.number().nullish(),
+      overdraftContractedLimit: z.number().nullish(),
+      overdraftUsedLimit: z.number().nullish(),
+      reservedBalances: z
+        .array(
+          z.object({
+            name: z.string().nullish(),
+            availableAmounts: z.array(z.object({ amount: z.number(), currencyCode: z.string().nullish() })).nullish(),
+          }),
+        )
+        .nullish(),
+    })
+    .nullish(),
 });
 
 const transaction = z.object({

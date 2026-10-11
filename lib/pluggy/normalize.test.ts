@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsReconnect, toAccountType, toAssetClass, toConnectionStatus, toLocalDate, toQuantity, toTransactionCents } from "./normalize";
+import { needsReconnect, toAccountType, toAssetClass, toBankExtras, toConnectionStatus, toLocalDate, toQuantity, toTransactionCents } from "./normalize";
 
 describe("toConnectionStatus", () => {
   it("mapeia os status da Pluggy", () => {
@@ -93,5 +93,55 @@ describe("toQuantity", () => {
     expect(toQuantity(0.00000012)).toBe("0.00000012");
     expect(toQuantity(null)).toBe("0");
     expect(toQuantity(-1)).toBe("0");
+  });
+});
+
+describe("toBankExtras", () => {
+  it("lê aplicação automática, caixinhas, cheque especial e saldo disponível", () => {
+    expect(
+      toBankExtras(
+        {
+          closingBalance: 1200.5,
+          automaticallyInvestedBalance: 3800,
+          overdraftContractedLimit: 2000,
+          overdraftUsedLimit: 0,
+          reservedBalances: [
+            { name: "Caixinha Para Férias", availableAmounts: [{ amount: 1500.25, currencyCode: "BRL" }, { amount: 99.75, currencyCode: "BRL" }] },
+            { name: null, availableAmounts: [{ amount: 300, currencyCode: null }] },
+          ],
+        },
+        "BRL",
+      ),
+    ).toEqual({
+      autoInvestedCents: 380_000,
+      savedCents: 190_000,
+      savedBoxes: [
+        { name: "Caixinha Para Férias", cents: 160_000 },
+        { name: "Saldo reservado", cents: 30_000 },
+      ],
+      closingBalanceCents: 120_050,
+      overdraftLimitCents: 200_000,
+      overdraftUsedCents: 0,
+    });
+  });
+
+  it("sem bankData (cartão, banco que não informa), tudo zero ou nulo", () => {
+    expect(toBankExtras(null, "BRL")).toEqual({
+      autoInvestedCents: 0,
+      savedCents: 0,
+      savedBoxes: [],
+      closingBalanceCents: null,
+      overdraftLimitCents: null,
+      overdraftUsedCents: null,
+    });
+  });
+
+  it("caixinha em outra moeda e caixinha vazia ficam de fora", () => {
+    const extras = toBankExtras(
+      { reservedBalances: [{ name: "Dólar", availableAmounts: [{ amount: 100, currencyCode: "USD" }] }, { name: "Vazia", availableAmounts: [] }] },
+      "BRL",
+    );
+    expect(extras.savedBoxes).toEqual([]);
+    expect(extras.savedCents).toBe(0);
   });
 });

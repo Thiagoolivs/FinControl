@@ -41,7 +41,9 @@ lib/
   queries/        consultas das telas; scope.ts = filtro PF/PJ/consolidado
   dates.ts        datas de calendário em America/Sao_Paulo
   preferences.ts  cookie de "ocultar valores" (o estado vive em components/ui/hide-values.tsx)
-  categorization/ matcher de regras e validação do rascunho de regra
+  categorization/ puro e testado: limpeza de descrição, matcher (sem acento), motor de regras, agrupamento da fila, categorias padrão
+  rules/          server-only: aplicar regras, fila de revisão, sugestões da IA, mutações de regra/categoria
+  ai/             cliente do Gemini (fetch + zod, resposta JSON validada)
   charts/         escalas de gráfico
   security/       rate limit
   db.ts           Prisma client
@@ -63,6 +65,9 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`).
 - Pluggy: conta bancária mantém o sinal; cartão vem com compra positiva e é invertido na ingestão. Dedup por `pluggyTransactionId`; PENDING que some da janela lida é removida.
 - Transferência = par saída/entrada de mesmo valor em contas diferentes, até 3 dias (`lib/finance/transfers.ts`); as duas pernas apontam uma para a outra (`transferPeerId`) e recebem a categoria de sistema `TRANSFERENCIA`. Saída de cartão nunca é perna.
+- Categorização: depois de cada sync, pareamento de transferências e então regras no que sobrou sem categoria. A primeira regra (menor prioridade; empate = mais antiga) que casa com a descrição limpa ou a original decide. O que foi categorizado por regra é sempre o que as regras dizem agora (editar/desligar/reordenar refaz); categoria escolhida à mão nunca é tocada.
+- Fila de revisão = saídas sem categoria, sem transferência, não ignoradas, agrupadas por `groupKey`. Entradas ficam para as streams (fase 4).
+- IA só sugere (RuleSuggestion pendente); só descrições vão ao Gemini, sem valores. Regra criada de sugestão aceita sem mudança = `IA_CONFIRMADA` e vai para o `AuditLog` com origem `AI`.
 - Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.

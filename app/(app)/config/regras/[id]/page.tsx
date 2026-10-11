@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/icon";
 import { requireUser } from "@/lib/auth/dal";
 import { db } from "@/lib/db";
 import { categoryOptions, getCategoryTree } from "@/lib/rules/categories";
+import { destinationOptions, prepareStreams } from "@/lib/streams/queries";
 import { PAGE_CLASS } from "../../../page-header";
 import { DeleteRule, RuleForm } from "../rule-form";
 
@@ -12,8 +13,10 @@ export default async function EditRulePage({ params }: PageProps<"/config/regras
   const { id } = await params;
   const rule = await db().rule.findFirst({ where: { id, userId: user.id } });
   if (!rule) notFound();
-  const [tree, sample] = await Promise.all([
+  await prepareStreams(user.id);
+  const [tree, options, sample] = await Promise.all([
     getCategoryTree(user.id),
+    destinationOptions(user.id),
     db().transaction.findFirst({ where: { userId: user.id, ruleId: rule.id }, select: { descriptionRaw: true }, orderBy: { date: "desc" } }),
   ]);
 
@@ -32,6 +35,8 @@ export default async function EditRulePage({ params }: PageProps<"/config/regras
       <RuleForm
         ruleId={rule.id}
         categories={categoryOptions(tree)}
+        streams={options.streams}
+        buckets={options.buckets}
         sampleDescription={sample?.descriptionRaw}
         initialValue={{
           pattern: rule.pattern,
@@ -39,6 +44,8 @@ export default async function EditRulePage({ params }: PageProps<"/config/regras
           direction: rule.direction,
           scope: rule.scope ?? "AMBOS",
           categoryId: rule.categoryId ?? "",
+          revenueStreamId: rule.revenueStreamId ?? "",
+          bucketId: rule.bucketId ?? "",
           priority: rule.priority,
         }}
       />

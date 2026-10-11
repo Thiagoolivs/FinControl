@@ -13,7 +13,9 @@ const ruleInput = z.object({
   matchType: z.enum(["PREFIX", "CONTAINS", "REGEX"]),
   direction: z.enum(["AMBAS", "ENTRADA", "SAIDA"]),
   scope: z.enum(["AMBOS", "PF", "PJ"]),
-  categoryId: z.string().min(1, "Escolha a categoria."),
+  categoryId: z.string(),
+  revenueStreamId: z.string(),
+  bucketId: z.string(),
   priority: z.number().int().min(1).max(9999),
   applyRetroactively: z.boolean(),
 });
@@ -22,8 +24,14 @@ export async function saveRuleAction(input: z.input<typeof ruleInput>): Promise<
   const user = await requireUser();
   const parsed = ruleInput.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
-  const { id, applyRetroactively, scope, ...rest } = parsed.data;
-  const data = { ...rest, scope: scope === "AMBOS" ? null : scope };
+  const { id, applyRetroactively, scope, categoryId, revenueStreamId, bucketId, ...rest } = parsed.data;
+  const data = {
+    ...rest,
+    scope: scope === "AMBOS" ? null : scope,
+    categoryId: categoryId || null,
+    revenueStreamId: revenueStreamId || null,
+    bucketId: bucketId || null,
+  };
   try {
     const changed = id
       ? await updateRule(user.id, id, data)

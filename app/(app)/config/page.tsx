@@ -135,6 +135,14 @@ export default async function ConfigPage() {
               </span>
             </RowLink>
           </li>
+          <li>
+            <RowLink href="/config/receitas">
+              <span className="flex flex-1 flex-col gap-[3px]">
+                <span className="text-[16px]">Receitas e reservas</span>
+                <span className="text-[13px] text-text-secondary">Streams, % de imposto e custo, DAS e saldos dos buckets</span>
+              </span>
+            </RowLink>
+          </li>
         </ul>
         <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
           {isGeminiConfigured()

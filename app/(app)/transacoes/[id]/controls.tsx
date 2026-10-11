@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Eyebrow } from "@/components/ui/text";
 import type { ActionState } from "../../actions";
-import { setCategoryAction, setIgnoredAction } from "../actions";
+import { setBucketAction, setCategoryAction, setIgnoredAction, setStreamAction } from "../actions";
 
 function Feedback({ state }: { state: ActionState }) {
   if (state.error) return <p role="alert" className="m-0 text-[13px] text-negative">{state.error}</p>;
@@ -50,6 +50,75 @@ export function CategorySelect({
       </label>
       <Feedback state={state} />
     </div>
+  );
+}
+
+/** Select genérico de destino: muda na hora e mostra o retorno da action. */
+function DestinationSelect({
+  label,
+  value: initial,
+  emptyLabel,
+  options,
+  onSave,
+}: {
+  label: string;
+  value: string | null;
+  emptyLabel: string;
+  options: { id: string; name: string }[];
+  onSave: (value: string | null) => Promise<ActionState>;
+}) {
+  const [value, setValue] = useState(initial ?? "");
+  const [state, setState] = useState<ActionState>({});
+  const [pending, startTransition] = useTransition();
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="relative flex">
+        <span className="sr-only">{label}</span>
+        <select
+          value={value}
+          disabled={pending}
+          onChange={(event) => {
+            const next = event.target.value;
+            setValue(next);
+            startTransition(async () => setState(await onSave(next || null)));
+          }}
+          className="h-[50px] w-full appearance-none rounded-button bg-surface px-4 pr-10 text-[16px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+        >
+          <option value="">{emptyLabel}</option>
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </select>
+        <Icon name="chevron-down" size={16} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-text-secondary" />
+      </label>
+      <Feedback state={state} />
+    </div>
+  );
+}
+
+export function StreamSelect({ transactionId, revenueStreamId, options }: { transactionId: string; revenueStreamId: string | null; options: { id: string; name: string }[] }) {
+  return (
+    <DestinationSelect
+      label="Stream de receita"
+      value={revenueStreamId}
+      emptyLabel="Sem stream"
+      options={options}
+      onSave={(value) => setStreamAction({ transactionId, revenueStreamId: value })}
+    />
+  );
+}
+
+export function BucketSelect({ transactionId, bucketId, options }: { transactionId: string; bucketId: string | null; options: { id: string; name: string }[] }) {
+  return (
+    <DestinationSelect
+      label="Pago com"
+      value={bucketId}
+      emptyLabel="Disponível (não sai de bucket)"
+      options={options}
+      onSave={(value) => setBucketAction({ transactionId, bucketId: value })}
+    />
   );
 }
 

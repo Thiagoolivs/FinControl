@@ -26,7 +26,6 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
   const [createRule, setCreateRule] = useState(true);
   const [pattern, setPattern] = useState(suggestion?.pattern ?? group.pattern);
   const [matchType, setMatchType] = useState<MatchType>(suggestion?.matchType ?? group.matchType);
-  const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<ActionState>({});
   const [pending, startTransition] = useTransition();
 
@@ -104,44 +103,10 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
       </label>
 
       {createRule ? (
-        <div className="flex flex-col gap-2">
-          <input
-            aria-label="Padrão da regra"
-            value={pattern}
-            onChange={(event) => setPattern(event.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            className="h-[50px] w-full rounded-button bg-surface-elevated px-4 font-mono text-[15px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-          <SegmentedControl variant="boxed" label="Tipo de comparação" options={MATCH_OPTIONS} value={matchType} onChange={setMatchType} />
-          <p className={`m-0 text-[13px] ${compiled.ok && matched === count ? "text-text-secondary" : "text-warning"}`}>
-            {!compiled.ok
-              ? compiled.error
-              : matched === count
-                ? `O padrão pega ${count === 1 ? "esta" : `as ${count}`} e as próximas iguais.`
-                : `O padrão pega ${matched} de ${count} destas. As outras entram nesta categoria só desta vez.`}
-          </p>
-        </div>
+        <PatternFields pattern={pattern} onPattern={setPattern} matchType={matchType} onMatchType={setMatchType} compiled={compiled} matched={matched} count={count} />
       ) : null}
 
-      <button type="button" onClick={() => setExpanded((open) => !open)} className="flex min-h-11 items-center gap-1 self-start text-[15px] text-accent">
-        {expanded ? "Esconder" : "Ver"} transações
-        <Icon name="chevron-down" size={14} className={expanded ? "rotate-180" : undefined} />
-      </button>
-      {expanded ? (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {group.transactions.map((transaction) => (
-            <li key={transaction.id} className="flex items-center gap-3 text-[14px]">
-              <span className="w-14 shrink-0 text-text-secondary">{dayMonth.format(new Date(`${transaction.date}T00:00:00Z`))}</span>
-              <span className="flex min-w-0 flex-1 items-center gap-2">
-                <span className="truncate">{transaction.description}</span>
-                <ScopeTag scope={transaction.scope} />
-              </span>
-              <Money cents={transaction.amountCents} kind="out" className="shrink-0" />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      <GroupTransactions transactions={group.transactions} kind="out" />
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={confirm} loading={pending} disabled={!categoryId || (createRule && !compiled.ok)} className="flex-1">
@@ -163,5 +128,72 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
         </p>
       ) : null}
     </li>
+  );
+}
+
+/** Padrão da regra que o grupo vira, com quantas das transações dele o padrão pega. */
+export function PatternFields({
+  pattern,
+  onPattern,
+  matchType,
+  onMatchType,
+  compiled,
+  matched,
+  count,
+}: {
+  pattern: string;
+  onPattern: (value: string) => void;
+  matchType: MatchType;
+  onMatchType: (value: MatchType) => void;
+  compiled: ReturnType<typeof compilePattern>;
+  matched: number;
+  count: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <input
+        aria-label="Padrão da regra"
+        value={pattern}
+        onChange={(event) => onPattern(event.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        className="h-[50px] w-full rounded-button bg-surface-elevated px-4 font-mono text-[15px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      />
+      <SegmentedControl variant="boxed" label="Tipo de comparação" options={MATCH_OPTIONS} value={matchType} onChange={onMatchType} />
+      <p className={`m-0 text-[13px] ${compiled.ok && matched === count ? "text-text-secondary" : "text-warning"}`}>
+        {!compiled.ok
+          ? compiled.error
+          : matched === count
+            ? `O padrão pega ${count === 1 ? "esta" : `as ${count}`} e as próximas iguais.`
+            : `O padrão pega ${matched} de ${count} destas. As outras ficam assim só desta vez.`}
+      </p>
+    </div>
+  );
+}
+
+/** "Ver transações" do grupo. */
+export function GroupTransactions({ transactions, kind }: { transactions: QueueGroup["transactions"]; kind: "in" | "out" }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setExpanded((open) => !open)} className="flex min-h-11 items-center gap-1 self-start text-[15px] text-accent">
+        {expanded ? "Esconder" : "Ver"} transações
+        <Icon name="chevron-down" size={14} className={expanded ? "rotate-180" : undefined} />
+      </button>
+      {expanded ? (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {transactions.map((transaction) => (
+            <li key={transaction.id} className="flex items-center gap-3 text-[14px]">
+              <span className="w-14 shrink-0 text-text-secondary">{dayMonth.format(new Date(`${transaction.date}T00:00:00Z`))}</span>
+              <span className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="truncate">{transaction.description}</span>
+                <ScopeTag scope={transaction.scope} />
+              </span>
+              <Money cents={transaction.amountCents} kind={kind} className="shrink-0" />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
   );
 }

@@ -105,8 +105,8 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           <BalanceComposition
             segments={[
               { key: "disponivel", label: "Disponível", cents: composition.availableCents },
-              { key: "reservado", label: "Reservado", cents: composition.reservedCents },
-              { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents },
+              { key: "reservado", label: "Reservado", cents: composition.reservedCents, href: "/reservas" },
+              { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents, href: "/negocio" },
             ]}
             total={{ label: "Saldo nas contas", cents: composition.grossCents }}
           />

@@ -1,26 +1,29 @@
 "use client";
 
 import { createContext, type ReactNode, useContext, useState } from "react";
-import { Icon } from "@/components/ui/icon";
 import { HIDE_VALUES_COOKIE, HIDE_VALUES_MAX_AGE } from "@/lib/preferences";
+import { Icon } from "./icon";
 
-const HiddenContext = createContext<{ hidden: boolean; toggle: () => void } | null>(null);
+type HiddenState = { hidden: boolean; toggle: () => void };
 
-/** Envolve as telas; com `data-hide-values`, o CSS troca cada valor pela máscara (globals.css). */
-export function PrivacyProvider({ initialHidden, children }: { initialHidden: boolean; children: ReactNode }) {
+const HiddenContext = createContext<HiddenState | null>(null);
+
+/**
+ * "Ocultar valores": os componentes de dinheiro leem daqui e renderizam o valor ou a máscara, nunca os dois.
+ * O estado inicial vem do cookie lido no servidor, então a página já nasce certa.
+ */
+export function HideValuesProvider({ initialHidden, children }: { initialHidden: boolean; children: ReactNode }) {
   const [hidden, setHidden] = useState(initialHidden);
   function toggle() {
     const next = !hidden;
     setHidden(next);
     document.cookie = `${HIDE_VALUES_COOKIE}=${next ? "1" : "0"}; Path=/; Max-Age=${HIDE_VALUES_MAX_AGE}; SameSite=Lax`;
   }
-  return (
-    <HiddenContext value={{ hidden, toggle }}>
-      <div data-hide-values={hidden ? "" : undefined} className="contents">
-        {children}
-      </div>
-    </HiddenContext>
-  );
+  return <HiddenContext value={{ hidden, toggle }}>{children}</HiddenContext>;
+}
+
+export function useValuesHidden(): boolean {
+  return useContext(HiddenContext)?.hidden ?? false;
 }
 
 export function HideValuesButton() {

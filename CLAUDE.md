@@ -40,7 +40,7 @@ lib/
   sync/           leitura das conexões: ingestão, pareamento de transferências, alertas de conexão
   queries/        consultas das telas; scope.ts = filtro PF/PJ/consolidado
   dates.ts        datas de calendário em America/Sao_Paulo
-  preferences.ts  preferências de exibição em cookie (ocultar valores)
+  preferences.ts  cookie de "ocultar valores" (o estado vive em components/ui/hide-values.tsx)
   categorization/ matcher de regras e validação do rascunho de regra
   charts/         escalas de gráfico
   security/       rate limit

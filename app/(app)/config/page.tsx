@@ -9,7 +9,7 @@ import { getConnections } from "@/lib/queries/overview";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
-import { ConnectPanel, ReconnectButton } from "./connect-panel";
+import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
 
 const longDate = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
@@ -51,6 +51,7 @@ export default async function ConfigPage() {
               const issues = connectionIssues(connection, rules.consent?.daysBefore ?? null);
               const lastRun = connection.syncRuns[0];
               const details = [
+                connection.scope === "PJ" ? "Empresa (PJ)" : "Pessoa física",
                 STATUS_LABEL[connection.status],
                 `${connection._count.accounts} ${connection._count.accounts === 1 ? "conta" : "contas"}`,
                 connection.lastSyncAt ? `banco lido ${formatElapsed(connection.lastSyncAt)}` : null,
@@ -80,6 +81,7 @@ export default async function ConfigPage() {
                   {configured && issues.some((issue) => issue.reconnect) ? (
                     <ReconnectButton connectionId={connection.id} scope={connection.scope} />
                   ) : null}
+                  <ScopeSwitch connectionId={connection.id} scope={connection.scope} />
                 </li>
               );
             })}

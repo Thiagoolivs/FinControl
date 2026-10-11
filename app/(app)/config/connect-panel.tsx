@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Eyebrow } from "@/components/ui/text";
-import { type ActionState, registerConnectionFormAction } from "../actions";
+import { type ActionState, changeConnectionScopeAction, registerConnectionFormAction } from "../actions";
 import { usePluggyConnect } from "./use-pluggy-connect";
 
 const SCOPES = [
@@ -84,6 +84,50 @@ export function ReconnectButton({ connectionId, scope }: { connectionId: string;
       ) : (
         <Feedback state={widget.state} />
       )}
+    </div>
+  );
+}
+
+/** Corrige PF ↔ PJ de uma conexão. Pede confirmação: muda contas e transações juntas. */
+export function ScopeSwitch({ connectionId, scope }: { connectionId: string; scope: "PF" | "PJ" }) {
+  const target = scope === "PF" ? "PJ" : "PF";
+  const [confirming, setConfirming] = useState(false);
+  const [state, setState] = useState<ActionState>({});
+  const [pending, startTransition] = useTransition();
+
+  if (!confirming) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button variant="link" className="self-start" onClick={() => setConfirming(true)}>
+          Mudar para {target === "PJ" ? "PJ (empresa)" : "PF (pessoa física)"}
+        </Button>
+        <Feedback state={state} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
+        As contas e todas as transações desta conexão passam para {target}. Dá para voltar depois.
+      </p>
+      <div className="flex gap-3">
+        <Button
+          variant="secondary"
+          className="h-11"
+          loading={pending}
+          onClick={() =>
+            startTransition(async () => {
+              setState(await changeConnectionScopeAction({ connectionId, scope: target }));
+              setConfirming(false);
+            })
+          }
+        >
+          Mudar para {target}
+        </Button>
+        <Button variant="link" onClick={() => setConfirming(false)} disabled={pending}>
+          Cancelar
+        </Button>
+      </div>
     </div>
   );
 }

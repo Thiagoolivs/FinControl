@@ -7,6 +7,7 @@ import { formatMoment } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { createConnectToken, isPluggyConfigured, isPluggyId, PluggyApiError, PluggyNotConfiguredError } from "@/lib/pluggy/client";
 import { createRateLimiter } from "@/lib/security/rate-limit";
+import { changeConnectionScope } from "@/lib/sync/scope";
 import { ConnectionOwnershipError, manualRefreshAvailableAt, registerConnection, syncUser, type UserSyncResult } from "@/lib/sync/sync";
 
 export type ActionState = { error?: string; notice?: string };
@@ -80,6 +81,22 @@ export async function registerConnectionAction(input: { itemId: string; scope: s
 
 export async function registerConnectionFormAction(_state: ActionState, formData: FormData): Promise<ActionState> {
   return registerConnectionAction({ itemId: String(formData.get("itemId") ?? ""), scope: String(formData.get("scope") ?? "") });
+}
+
+const scopeInput = z.object({ connectionId: z.string().min(1), scope: z.enum(["PF", "PJ"]) });
+
+/** Corrige o escopo de uma conexão (ex.: conta PF conectada como PJ), com contas e transações. */
+export async function changeConnectionScopeAction(input: { connectionId: string; scope: string }): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = scopeInput.safeParse(input);
+  if (!parsed.success) return { error: "Escopo inválido." };
+  try {
+    const { changed } = await changeConnectionScope(user.id, parsed.data.connectionId, parsed.data.scope);
+    revalidatePath("/", "layout");
+    return { notice: changed ? `Movida para ${parsed.data.scope}, com contas e transações.` : "Nada mudou." };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Não foi possível mudar o escopo." };
+  }
 }
 
 /** Botão "Atualizar": lê de novo tudo que a Pluggy tem. Cooldown de 6h entre leituras bem-sucedidas. */

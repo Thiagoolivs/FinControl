@@ -18,4 +18,12 @@ export async function register() {
   } catch (error) {
     console.error("Não foi possível sincronizar o usuário de LOGIN_USERNAME:", error);
   }
+
+  // Limpeza de descrição nova no deploy vale para o histórico também. Não segura o boot.
+  const { recleanAllUsers } = await import("@/lib/rules/reclean");
+  void recleanAllUsers()
+    .then((count) => {
+      if (count > 0) console.log(`Descrições revisadas com a limpeza nova: ${count}.`);
+    })
+    .catch((error: unknown) => console.error("Não foi possível revisar as descrições:", error));
 }

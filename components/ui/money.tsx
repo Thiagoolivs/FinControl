@@ -25,7 +25,18 @@ export function Money({ cents, kind = "neutral", hideZeroCents, className }: Mon
         className,
       )}
     >
-      {text}
+      <span className="sensitive-value">{text}</span>
+      <ValueMask />
+    </span>
+  );
+}
+
+/** O que aparece no lugar do valor quando "ocultar valores" está ligado. */
+function ValueMask() {
+  return (
+    <span className="sensitive-mask">
+      <span aria-hidden="true">R$ ••••</span>
+      <span className="sr-only">valor oculto</span>
     </span>
   );
 }
@@ -40,19 +51,25 @@ export function HeroAmount({ cents, className }: { cents: number; className?: st
         ? "text-[56px] leading-[60px]"
         : "text-[44px] leading-[48px]";
   return (
-    <span className={cn("flex items-baseline gap-1.5 tabular-nums", className)}>
-      <span className="sr-only">{formatCents(cents)}</span>
-      <span aria-hidden="true" className="text-[22px] text-text-secondary">
-        {sign}R$
+    <span className={cn("block tabular-nums", className)}>
+      <span className="sensitive-mask">
+        <span aria-hidden="true" className="flex items-baseline gap-1.5 text-text-secondary">
+          <span className="text-[22px]">R$</span>
+          <span className="text-[56px] font-light leading-[76px] tracking-[0.04em]">••••</span>
+        </span>
+        <span className="sr-only">saldo oculto</span>
       </span>
-      <span
-        aria-hidden="true"
-        className={cn(unitsSize, "font-light tracking-[-0.045em]", cents < 0 && "text-negative")}
-      >
-        {units}
-      </span>
-      <span aria-hidden="true" className="text-[34px] font-light tracking-[-0.02em] text-text-secondary">
-        ,{rest}
+      <span className="sensitive-value flex items-baseline gap-1.5">
+        <span className="sr-only">{formatCents(cents)}</span>
+        <span aria-hidden="true" className="text-[22px] text-text-secondary">
+          {sign}R$
+        </span>
+        <span aria-hidden="true" className={cn(unitsSize, "font-light tracking-[-0.045em]", cents < 0 && "text-negative")}>
+          {units}
+        </span>
+        <span aria-hidden="true" className="text-[34px] font-light tracking-[-0.02em] text-text-secondary">
+          ,{rest}
+        </span>
       </span>
     </span>
   );

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AccountButton } from "@/components/ui/navigation";
 import { Eyebrow } from "@/components/ui/text";
+import { HideValuesButton } from "./privacy";
 
 /** Cabeçalho das telas: rótulo da tela à esquerda, avatar (Carteira e Config) à direita. */
 export function PageHeader({ title, trailing }: { title: string; trailing?: ReactNode }) {
@@ -9,6 +10,7 @@ export function PageHeader({ title, trailing }: { title: string; trailing?: Reac
       <Eyebrow as="h1">{title}</Eyebrow>
       <div className="flex items-center gap-2">
         {trailing}
+        <HideValuesButton />
         <AccountButton href="/config" />
       </div>
     </header>

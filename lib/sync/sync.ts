@@ -8,6 +8,7 @@ import { toConnectionStatus } from "@/lib/pluggy/normalize";
 import { applyRules } from "@/lib/rules/apply";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { ensureDefaultCategories } from "@/lib/rules/categories";
+import { refreshRecurringSeries } from "@/lib/projection/recurring";
 import { ensureObligationReservations, refreshBucketBalances } from "@/lib/streams/ledger";
 import { ensureStreamsSetup } from "@/lib/streams/setup";
 import { suggestWithAi } from "@/lib/rules/suggest";
@@ -185,6 +186,7 @@ export async function syncUser(
     await ensureObligationReservations(userId);
     // PENDING que sumiu da Pluggy leva os lançamentos de bucket junto (cascade): o saldo em cache é refeito.
     await refreshBucketBalances(userId);
+    await refreshRecurringSeries(userId);
     if (isGeminiConfigured()) {
       try {
         await suggestWithAi(userId);

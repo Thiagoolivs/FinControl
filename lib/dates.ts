@@ -102,6 +102,12 @@ export function addMonths(month: string, count: number): string {
   return value.toISOString().slice(0, 7);
 }
 
+/** Meses de `from` até `to`: "2026-10" → "2027-12" = 14; negativo se `to` vier antes. */
+export function monthsBetween(from: string, to: string): number {
+  if (!isMonth(from) || !isMonth(to)) throw new RangeError(`Mês inválido: ${from} / ${to}`);
+  return (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7));
+}
+
 /** Primeiro e último dia do mês, como datas de calendário. */
 export function monthRange(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: addDays(`${addMonths(month, 1)}-01`, -1) };

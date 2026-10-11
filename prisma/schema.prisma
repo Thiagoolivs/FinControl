@@ -208,6 +208,8 @@ model User {
   bucketEntries     BucketEntry[]
   fixedObligations  FixedObligation[]
   goals             Goal[]
+  goalContributions GoalContribution[]
+  goalSnapshots     GoalSnapshot[]
   holdings          Holding[]
   allocationTargets AllocationTarget[]
   alerts            Alert[]
@@ -580,6 +582,7 @@ model Goal {
 
 model GoalContribution {
   id            String   @id @default(cuid())
+  userId        String
   goalId        String
   date          DateTime @db.Date
   amountCents   Int // negativo = resgate
@@ -587,24 +590,29 @@ model GoalContribution {
   note          String?
   createdAt     DateTime @default(now())
 
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal        Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([goalId, date])
+  @@index([userId])
 }
 
 // Foto mensal da meta. "Atrasada" = monthlyRequiredCents subiu em dois snapshots seguidos.
 model GoalSnapshot {
   id                   String   @id @default(cuid())
+  userId               String
   goalId               String
   month                String // "2026-10"
   currentCents         Int
   monthlyRequiredCents Int
   createdAt            DateTime @default(now())
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
   @@unique([goalId, month])
+  @@index([userId])
 }
 
 // ─── Investimentos ───────────────────────────────────────────────────────

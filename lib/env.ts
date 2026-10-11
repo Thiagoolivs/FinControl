@@ -13,6 +13,9 @@ const schema = z.object({
   // Só para testes locais contra um servidor falso; em produção fica vazia.
   PLUGGY_API_URL: z.url().optional(),
   GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().optional(),
+  // Só para testes locais contra um servidor falso; em produção fica vazia.
+  GEMINI_API_URL: z.url().optional(),
   BRAPI_TOKEN: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),

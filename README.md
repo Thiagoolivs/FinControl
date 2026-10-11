@@ -22,6 +22,10 @@ Para trocar a senha, mude `LOGIN_PASSWORD` e reinicie o serviço: o hash é atua
 3. No app, **Config → Conexões**: escolha PF ou PJ e toque em **Conectar banco** (widget da Pluggy → MeuPluggy). Se preferir conectar pelo painel da Pluggy, cole o ID do item em "Use o ID do item".
 4. Para reconectar ou renovar o consentimento, use **Reconectar** na própria conexão. Conectar de novo cria outro item e gasta a cota da Pluggy.
 
+### Sugestões da IA (opcional)
+
+Com `GEMINI_API_KEY` nas Variables do app, a fila de revisão recebe sugestão de categoria e padrão para cada grupo (só as descrições vão para o Gemini, sem valores). `GEMINI_MODEL` troca o modelo (padrão `gemini-2.5-flash`). Sem a chave, a fila funciona igual, sem sugestões.
+
 ### Sync diário (Railway Cron)
 
 1. No app, em Variables: `CRON_SECRET` = saída de `openssl rand -hex 32`.

@@ -36,6 +36,7 @@ export async function POST(request: Request) {
         : {
             userId,
             transferencias: result.transferencias,
+            categorizadas: result.categorizadas,
             conexoes: result.outcomes.map((outcome) =>
               outcome.ok ? { id: outcome.connectionId, ok: true, ...outcome.stats } : { id: outcome.connectionId, ok: false, erro: outcome.error },
             ),

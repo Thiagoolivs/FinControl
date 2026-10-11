@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, daysBetween, formatDayLabel, formatElapsed, formatMoment, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
+import { addDays, addMonths, daysBetween, formatMonthLabel, isMonth, monthRange, formatDayLabel, formatElapsed, formatMoment, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
 
 describe("localDateOf", () => {
   it("usa o dia de São Paulo, não o de UTC", () => {
@@ -58,5 +58,25 @@ describe("formatação", () => {
     expect(formatMoment(new Date("2026-10-10T20:30:00Z"), now)).toBe("hoje às 17:30");
     expect(formatMoment(new Date("2026-10-11T11:15:00Z"), now)).toBe("amanhã às 08:15");
     expect(formatMoment(new Date("2026-10-12T11:15:00Z"), now)).toBe("12 de outubro às 08:15");
+  });
+});
+
+describe("meses", () => {
+  it("soma meses atravessando o ano", () => {
+    expect(addMonths("2026-10", -3)).toBe("2026-07");
+    expect(addMonths("2026-01", -1)).toBe("2025-12");
+    expect(addMonths("2026-12", 1)).toBe("2027-01");
+  });
+
+  it("dá o intervalo do mês, inclusive fevereiro bissexto", () => {
+    expect(monthRange("2026-10")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(monthRange("2028-02")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+  });
+
+  it("valida e formata", () => {
+    expect(isMonth("2026-10")).toBe(true);
+    expect(isMonth("2026-13")).toBe(false);
+    expect(formatMonthLabel("2026-10")).toBe("outubro de 2026");
+    expect(() => addMonths("outubro", 1)).toThrow(RangeError);
   });
 });

@@ -2,9 +2,14 @@ export type MatchType = "PREFIX" | "CONTAINS" | "REGEX";
 
 export type CompiledPattern = { ok: true; test: (description: string) => boolean } | { ok: false; error: string };
 
-const normalize = (text: string): string => text.trim().replace(/\s+/g, " ").toUpperCase();
+/** Maiúsculas, sem acento e com espaços simples: "Padaria  São João" → "PADARIA SAO JOAO". */
+export function normalizeText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").trim().replace(/\s+/g, " ").toUpperCase();
+}
 
-/** Compila o padrão de uma regra. Comparação sem diferenciar maiúsculas e espaços repetidos. */
+const normalize = normalizeText;
+
+/** Compila o padrão de uma regra. Comparação sem diferenciar maiúsculas, acentos e espaços repetidos. */
 export function compilePattern(pattern: string, matchType: MatchType): CompiledPattern {
   const trimmed = pattern.trim();
   if (!trimmed) return { ok: false, error: "Informe um padrão." };

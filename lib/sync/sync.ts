@@ -5,6 +5,10 @@ import { db } from "@/lib/db";
 import { TRANSFER_WINDOW_DAYS } from "@/lib/finance/transfers";
 import { fetchAccounts, fetchBills, fetchConsent, fetchItem, fetchTransactions, type PluggyItem } from "@/lib/pluggy/client";
 import { toConnectionStatus } from "@/lib/pluggy/normalize";
+import { applyRules } from "@/lib/rules/apply";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
+import { ensureDefaultCategories } from "@/lib/rules/categories";
+import { suggestWithAi } from "@/lib/rules/suggest";
 import { raiseConnectionAlerts } from "./alerts";
 import { ingestTransactions, upsertAccount, upsertBills } from "./ingest";
 import { detectTransfers } from "./transfers";
@@ -24,7 +28,7 @@ export type ConnectionOutcome =
 
 export type UserSyncResult =
   | { status: "busy" }
-  | { status: "done"; outcomes: ConnectionOutcome[]; transferencias: number };
+  | { status: "done"; outcomes: ConnectionOutcome[]; transferencias: number; categorizadas: number };
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -168,8 +172,23 @@ export async function syncUser(
     fullHistory ||= result.fullHistory;
   }
   const from = fullHistory ? null : addDays(todayLocal(), -(INCREMENTAL_WINDOW_DAYS + TRANSFER_WINDOW_DAYS));
-  const transferencias = outcomes.some((outcome) => outcome.ok) ? await detectTransfers(userId, from) : 0;
-  return { status: "done", outcomes, transferencias };
+  const anyOk = outcomes.some((outcome) => outcome.ok);
+  const transferencias = anyOk ? await detectTransfers(userId, from) : 0;
+  // Ordem importa: transferência primeiro (pareamento), depois as regras no que sobrou sem categoria.
+  let categorizadas = 0;
+  if (anyOk) {
+    await ensureDefaultCategories(userId);
+    categorizadas = await applyRules(userId, "sem-categoria");
+    if (isGeminiConfigured()) {
+      try {
+        await suggestWithAi(userId);
+      } catch (error) {
+        // Sugestão é conveniência: a fila continua funcionando sem ela.
+        console.error("Sugestões da IA falharam:", error);
+      }
+    }
+  }
+  return { status: "done", outcomes, transferencias, categorizadas };
 }
 
 /** Quando o botão "Atualizar" volta a ficar disponível (null = já está). Leitura que falhou não conta. */

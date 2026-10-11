@@ -1,5 +1,6 @@
 import "server-only";
 import type { AccountType, Scope, TransactionStatus } from "@/generated/prisma/enums";
+import { cleanDescription } from "@/lib/categorization/clean";
 import { addDays, fromDbDate, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { decimalToCents } from "@/lib/finance/money";
@@ -63,7 +64,7 @@ function toRow(account: LocalAccount, wire: PluggyTransaction): Row {
     date: toLocalDate(wire.date),
     amountCents: toTransactionCents(account.type, wire.amount, wire.amountInAccountCurrency),
     descriptionRaw: wire.descriptionRaw?.trim() || wire.description,
-    descriptionClean: wire.description.trim(),
+    descriptionClean: cleanDescription(wire.description),
     providerCategory: wire.category ?? null,
     installmentCurrent: wire.creditCardMetadata?.installmentNumber ?? null,
     installmentTotal: wire.creditCardMetadata?.totalInstallments ?? null,

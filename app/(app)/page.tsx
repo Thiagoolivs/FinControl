@@ -148,7 +148,12 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       ) : null}
 
       {connections.length > 0 && spend.length > 0 ? (
-        <CategoryBar title="Gastos do mês" items={spend} overThresholdBps={overBps ?? Number.POSITIVE_INFINITY} />
+        <div className="flex flex-col gap-2">
+          <CategoryBar title="Gastos do mês" items={spend} overThresholdBps={overBps ?? Number.POSITIVE_INFINITY} />
+          <Link href="/transacoes/categorias" className="flex min-h-11 items-center self-start text-[15px] text-accent">
+            Ver todas as áreas
+          </Link>
+        </div>
       ) : null}
 
       {connections.length > 0 ? (

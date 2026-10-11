@@ -73,8 +73,22 @@ export async function listTransactions(userId: string, filters: TransactionFilte
 
 export type ListedTransaction = Awaited<ReturnType<typeof listTransactions>>["rows"][number];
 
-/** Gasto do mês por categoria de primeiro nível, com a razão sobre a média dos 3 meses anteriores. */
-export async function getMonthSpendByCategory(userId: string, scope: ScopeQuery, month: string): Promise<CategorySpend[]> {
+export type CategoryBreakdownRow = {
+  id: string; // "sem" = sem categoria
+  name: string;
+  icon: string;
+  kind: "ESSENCIAL" | "VARIAVEL" | null;
+  cents: number;
+  averageRatioBps: number | null;
+  children: { id: string; name: string; cents: number }[];
+};
+
+/**
+ * Gastos do mês por área: categoria de primeiro nível (com a razão sobre a média dos 3 meses anteriores)
+ * e, dentro dela, cada subcategoria. Só essenciais, variáveis e sem categoria: investimento e transferência
+ * não são gasto.
+ */
+export async function getMonthCategoryBreakdown(userId: string, scope: ScopeQuery, month: string): Promise<CategoryBreakdownRow[]> {
   const from = monthRange(addMonths(month, -3)).from;
   const { to } = monthRange(month);
   const [rows, categories, first] = await Promise.all([
@@ -89,7 +103,7 @@ export async function getMonthSpendByCategory(userId: string, scope: ScopeQuery,
       },
       select: { date: true, amountCents: true, categoryId: true },
     }),
-    db().category.findMany({ where: { userId }, select: { id: true, parentId: true, name: true, icon: true } }),
+    db().category.findMany({ where: { userId }, select: { id: true, parentId: true, name: true, icon: true, kind: true } }),
     db().transaction.aggregate({ where: { userId, ...scopeWhere(scope) }, _min: { date: true } }),
   ]);
   // Mês antes do começo dos dados é "sem histórico", não "gasto zero": fica fora da média.
@@ -103,6 +117,7 @@ export async function getMonthSpendByCategory(userId: string, scope: ScopeQuery,
   }
   const totals = (key: string) => spendByTopCategory(byMonth.get(key) ?? [], parentOf);
   const current = totals(month);
+  const leaves = spendByTopCategory(byMonth.get(month) ?? [], new Map());
   const history = coveredMonths.map(totals);
   const byId = new Map(categories.map((category) => [category.id, category]));
 
@@ -110,15 +125,32 @@ export async function getMonthSpendByCategory(userId: string, scope: ScopeQuery,
     .filter(([, cents]) => cents > 0)
     .map(([id, cents]) => {
       const category = id ? byId.get(id) : null;
+      const children = id
+        ? [...leaves]
+            .filter(([leaf, leafCents]) => leaf !== null && leafCents > 0 && (leaf === id ? false : parentOf.get(leaf) === id))
+            .map(([leaf, leafCents]) => ({ id: leaf ?? "", name: byId.get(leaf ?? "")?.name ?? "", cents: leafCents }))
+            .sort((a, b) => b.cents - a.cents)
+        : [];
+      const direct = id ? (leaves.get(id) ?? 0) : 0;
+      if (id && children.length > 0 && direct > 0) children.push({ id, name: "Sem subcategoria", cents: direct });
       return {
         id: id ?? "sem",
         name: category?.name ?? "Sem categoria",
         icon: category?.icon ?? "dots",
+        kind: category?.kind === "ESSENCIAL" || category?.kind === "VARIAVEL" ? category.kind : null,
         cents,
         averageRatioBps: averageRatioBps(
           cents,
           history.map((months) => months.get(id) ?? 0),
         ),
+        children,
       };
-    });
+    })
+    .sort((a, b) => b.cents - a.cents);
+}
+
+/** Para o gráfico da Hoje: só o primeiro nível. */
+export async function getMonthSpendByCategory(userId: string, scope: ScopeQuery, month: string): Promise<CategorySpend[]> {
+  const breakdown = await getMonthCategoryBreakdown(userId, scope, month);
+  return breakdown.map(({ id, name, icon, cents, averageRatioBps: ratio }) => ({ id, name, icon, cents, averageRatioBps: ratio }));
 }

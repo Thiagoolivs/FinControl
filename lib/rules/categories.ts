@@ -1,10 +1,8 @@
 import "server-only";
-import { cleanDescription } from "@/lib/categorization/clean";
 import { DEFAULT_CATEGORIES } from "@/lib/categorization/defaults";
 import { db } from "@/lib/db";
 import { ensureTransferCategory } from "@/lib/sync/transfers";
-
-const BACKFILL_BATCH = 200;
+import { recleanDescriptions } from "./reclean";
 
 /**
  * Cria a árvore inicial de categorias na primeira vez (e só nela) e, junto, limpa as descrições
@@ -31,22 +29,8 @@ export async function ensureDefaultCategories(userId: string): Promise<boolean> 
     return true;
   });
   await ensureTransferCategory(userId);
-  if (created) await backfillCleanDescriptions(userId);
+  if (created) await recleanDescriptions(userId);
   return created;
-}
-
-async function backfillCleanDescriptions(userId: string): Promise<void> {
-  const rows = await db().transaction.findMany({ where: { userId }, select: { id: true, descriptionClean: true } });
-  const changed = rows
-    .map((row) => ({ id: row.id, clean: cleanDescription(row.descriptionClean) }))
-    .filter((row, index) => row.clean !== rows[index]?.descriptionClean);
-  for (let start = 0; start < changed.length; start += BACKFILL_BATCH) {
-    await db().$transaction(
-      changed
-        .slice(start, start + BACKFILL_BATCH)
-        .map((row) => db().transaction.update({ where: { id: row.id, userId }, data: { descriptionClean: row.clean } })),
-    );
-  }
 }
 
 /** Categorias do usuário em árvore, para selects e telas. Transferências por último. */

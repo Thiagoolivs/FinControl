@@ -8,6 +8,7 @@ import { formatElapsed, localDateOf } from "@/lib/dates";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { db } from "@/lib/db";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
+import { vapidPublicKey } from "@/lib/push/send";
 import { getConnections, getCronHealth } from "@/lib/queries/overview";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { connectionIssues, STATUS_LABEL } from "../connection-health";
@@ -15,6 +16,7 @@ import { PAGE_CLASS, PageHeader } from "../page-header";
 import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
 import { InstallApp } from "./install-app";
+import { NotificationSettings } from "./notifications";
 
 const longDate = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 
@@ -157,6 +159,19 @@ export default async function ConfigPage() {
           App
         </h2>
         <InstallApp />
+      </section>
+
+      <section aria-labelledby="notificacoes" className="flex flex-col gap-3">
+        <h2 id="notificacoes" className="m-0 text-[28px] font-light leading-8 tracking-[-0.02em]">
+          Notificações
+        </h2>
+        <NotificationSettings publicKey={vapidPublicKey()} />
+        <RowLink href="/config/alertas">
+          <span className="flex flex-1 flex-col gap-[3px]">
+            <span className="text-[16px]">Alertas</span>
+            <span className="text-[13px] text-text-secondary">O que dispara, limites e o que vira notificação</span>
+          </span>
+        </RowLink>
       </section>
 
       <section aria-labelledby="conta" className="flex flex-col gap-3">

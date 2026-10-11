@@ -114,7 +114,7 @@ export async function getProjection(userId: string, query: ScopeQuery, options: 
 
   // Ponto de partida: disponível de hoje menos a fatura em aberto (o limite usado tem as parcelas futuras).
   const balance = summarizeBalances(accounts);
-  const available = composeBalance({ grossCents: balance.cashCents, ...buckets }).availableCents;
+  const available = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets }).availableCents;
   const cardBillCents = Math.max(0, balance.creditUsedCents + installmentsCents);
 
   // Gastos variáveis: o que não é recorrente, parcela, transferência, investimento nem pago com bucket.

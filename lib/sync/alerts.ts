@@ -1,37 +1,15 @@
 import "server-only";
-import { z } from "zod";
 import type { AlertType, ConnectionStatus, Scope, Severity } from "@/generated/prisma/enums";
 import { daysBetween, localDateOf, todayLocal } from "@/lib/dates";
+import { activeAlertRules } from "@/lib/alerts/rules";
 import { db } from "@/lib/db";
 import { needsReconnect } from "@/lib/pluggy/normalize";
 
-type DefaultRule = { type: AlertType; severity: Severity; push: boolean; params: Record<string, number> };
-
-// Valores iniciais: o usuário ajusta pela tela de regras de alerta (fase 7).
-const DEFAULT_RULES: DefaultRule[] = [
-  { type: "CONEXAO_ERRO", severity: "ALTA", push: true, params: {} },
-  { type: "CONSENTIMENTO_EXPIRANDO", severity: "MEDIA", push: false, params: { diasAntes: 30 } },
-  { type: "CATEGORIA_ACIMA_MEDIA", severity: "MEDIA", push: false, params: { limiteBps: 12_000 } },
-];
-
-/** Cria as regras de alerta que ainda não existem, com os valores iniciais. */
-async function ensureAlertRules(userId: string): Promise<void> {
-  const existing = await db().alertRule.findMany({ where: { userId }, select: { type: true } });
-  const missing = DEFAULT_RULES.filter((rule) => !existing.some((row) => row.type === rule.type));
-  if (missing.length > 0) await db().alertRule.createMany({ data: missing.map((rule) => ({ ...rule, userId })) });
-}
-
-const categoryParams = z.object({ limiteBps: z.number().int().min(10_000).max(100_000) });
-
-/** A partir de quantos % da média de 3 meses uma categoria fica laranja (e vira alerta na fase 7). Null = regra desligada. */
+/** A partir de quantos % da média de 3 meses uma categoria fica laranja (e vira alerta). Null = regra desligada. */
 export async function categoryOverThresholdBps(userId: string): Promise<number | null> {
-  await ensureAlertRules(userId);
-  const rule = await db().alertRule.findFirst({ where: { userId, type: "CATEGORIA_ACIMA_MEDIA", active: true }, orderBy: { createdAt: "asc" } });
-  const params = rule ? categoryParams.safeParse(rule.params) : null;
-  return params?.success ? params.data.limiteBps : null;
+  const rule = (await activeAlertRules(userId)).CATEGORIA_ACIMA_MEDIA;
+  return rule ? (rule.params.limiteBps ?? null) : null;
 }
-
-const consentParams = z.object({ diasAntes: z.number().int().min(1).max(365) });
 
 type ConnectionRules = {
   error: { id: string; severity: Severity } | null;
@@ -40,17 +18,12 @@ type ConnectionRules = {
 
 /** Regras de alerta de conexão do usuário; cria as que ainda não existem com os valores iniciais. */
 export async function connectionAlertRules(userId: string): Promise<ConnectionRules> {
-  await ensureAlertRules(userId);
-  const rules = await db().alertRule.findMany({
-    where: { userId, type: { in: ["CONEXAO_ERRO", "CONSENTIMENTO_EXPIRANDO"] } },
-    orderBy: { createdAt: "asc" },
-  });
-  const error = rules.find((rule) => rule.type === "CONEXAO_ERRO" && rule.active);
-  const consent = rules.find((rule) => rule.type === "CONSENTIMENTO_EXPIRANDO" && rule.active);
-  const params = consent ? consentParams.safeParse(consent.params) : null;
+  const rules = await activeAlertRules(userId);
+  const error = rules.CONEXAO_ERRO;
+  const consent = rules.CONSENTIMENTO_EXPIRANDO;
   return {
     error: error ? { id: error.id, severity: error.severity } : null,
-    consent: consent && params?.success ? { id: consent.id, severity: consent.severity, daysBefore: params.data.diasAntes } : null,
+    consent: consent ? { id: consent.id, severity: consent.severity, daysBefore: consent.params.diasAntes ?? 30 } : null,
   };
 }
 

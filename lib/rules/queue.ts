@@ -8,7 +8,7 @@ const queueWhere = (userId: string) =>
   ({ userId, categoryId: null, transferPeerId: null, isIgnored: false, amountCents: { lt: 0 } }) as const;
 
 /** Entradas sem stream e sem categoria: toda receita precisa de stream (estorno vira categoria). */
-const incomeQueueWhere = (userId: string) =>
+export const incomeQueueWhere = (userId: string) =>
   ({ userId, categoryId: null, revenueStreamId: null, transferPeerId: null, isIgnored: false, amountCents: { gt: 0 } }) as const;
 
 /** Badge da aba Transações: saídas sem categoria + entradas sem stream. */

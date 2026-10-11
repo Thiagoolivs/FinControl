@@ -18,3 +18,11 @@ export function formatBps(bps: number, decimals = 0): string {
   const value = (bps / 100).toFixed(decimals).replace(".", ",");
   return `${value}%`;
 }
+
+/** Variação de `from` para `to` em bps (de 100 para 120 = +2000). Sem base (from <= 0), null. */
+export function variationBps(fromCents: number, toCents: number): number | null {
+  assertCents(fromCents);
+  assertCents(toCents);
+  if (fromCents <= 0) return null;
+  return Math.round(((toCents - fromCents) * 10_000) / fromCents);
+}

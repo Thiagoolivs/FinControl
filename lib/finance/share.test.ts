@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBps, progressBps, shareBps } from "./share";
+import { formatBps, progressBps, shareBps, variationBps } from "./share";
 
 describe("shareBps", () => {
   it("calcula a parcela em basis points", () => {
@@ -30,5 +30,13 @@ describe("formatBps", () => {
   it("formata em pt-BR", () => {
     expect(formatBps(12800)).toBe("128%");
     expect(formatBps(4739, 1)).toBe("47,4%");
+  });
+});
+
+describe("variationBps", () => {
+  it("variação percentual em bps", () => {
+    expect(variationBps(10_000, 12_000)).toBe(2_000);
+    expect(variationBps(10_000, 7_500)).toBe(-2_500);
+    expect(variationBps(0, 100)).toBeNull();
   });
 });

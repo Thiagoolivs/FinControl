@@ -4,7 +4,9 @@ import { countUnreadAlerts } from "@/lib/alerts/queries";
 import { requireUser } from "@/lib/auth/dal";
 import { HIDE_VALUES_COOKIE } from "@/lib/preferences";
 import { countReviewQueue } from "@/lib/rules/queue";
+import { Suspense } from "react";
 import { AppSideNav, AppTabBar } from "./app-nav";
+import { Chat } from "./chat";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await requireUser();
@@ -20,6 +22,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           {children}
         </div>
         <AppTabBar reviewCount={reviewCount} alertCount={alertCount} />
+        <Suspense>
+          <Chat />
+        </Suspense>
       </div>
     </HideValuesProvider>
   );

@@ -27,6 +27,7 @@ export type ResponseSchema = {
   required?: string[];
   enum?: string[];
   nullable?: boolean;
+  description?: string;
 };
 
 const errorBody = z.object({ error: z.object({ message: z.string().optional() }).optional() });
@@ -110,4 +111,65 @@ export async function generateJson<T>(options: { system: string; prompt: string;
   const parsed = options.parse.safeParse(json);
   if (!parsed.success) throw new GeminiError(`Resposta do Gemini fora do formato: ${z.prettifyError(parsed.error)}`);
   return parsed.data;
+}
+
+// ─── Function calling (chat) ────────────────────────────────────────────
+
+export type FunctionDeclaration = { name: string; description: string; parameters?: ResponseSchema };
+
+/** Parte de conteúdo no formato da API. Campos desconhecidos (ex.: thoughtSignature) são preservados. */
+export type GeminiPart = {
+  text?: string;
+  thought?: boolean;
+  thoughtSignature?: string;
+  functionCall?: { name: string; args?: Record<string, unknown> };
+  functionResponse?: { name: string; response: Record<string, unknown> };
+  [key: string]: unknown;
+};
+
+export type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+
+const partSchema = z
+  .object({
+    text: z.string().optional(),
+    thought: z.boolean().optional(),
+    thoughtSignature: z.string().optional(),
+    functionCall: z.object({ name: z.string(), args: z.record(z.string(), z.unknown()).optional() }).optional(),
+  })
+  .passthrough();
+
+const toolResponseBody = z.object({
+  candidates: z
+    .array(z.object({ content: z.object({ role: z.string().optional(), parts: z.array(partSchema).optional() }).optional(), finishReason: z.string().optional() }))
+    .optional(),
+  promptFeedback: z.object({ blockReason: z.string().optional() }).optional(),
+});
+
+/**
+ * Uma rodada do chat com tools. Devolve as partes do modelo como vieram (o próximo pedido precisa
+ * delas intactas, assinatura de pensamento inclusive).
+ */
+export async function generateWithTools(options: { system: string; contents: GeminiContent[]; tools: FunctionDeclaration[] }): Promise<GeminiPart[]> {
+  const env = serverEnv();
+  if (!env.GEMINI_API_KEY || !env.GEMINI_MODEL) throw new GeminiError("Defina GEMINI_API_KEY e GEMINI_MODEL.");
+  const model = modelName(env.GEMINI_MODEL);
+  const response = await fetch(`${env.GEMINI_API_URL ?? DEFAULT_BASE_URL}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: options.system }] },
+      contents: options.contents,
+      tools: [{ functionDeclarations: options.tools }],
+      toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+      generationConfig: { temperature: 0.2 },
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw await toGeminiError(response, model);
+  const body = toolResponseBody.parse(await response.json());
+  if (body.promptFeedback?.blockReason) throw new GeminiError(`O Gemini bloqueou a pergunta (${body.promptFeedback.blockReason}).`);
+  const candidate = body.candidates?.[0];
+  const parts = (candidate?.content?.parts ?? []) as GeminiPart[];
+  if (parts.length === 0) throw new GeminiError(`Gemini não devolveu conteúdo (${candidate?.finishReason ?? "sem candidato"}).`);
+  return parts;
 }

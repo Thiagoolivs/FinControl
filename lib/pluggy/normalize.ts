@@ -1,5 +1,5 @@
 // Onde o vocabulário da Pluggy vira o nosso. Puro: sem rede, sem banco.
-import type { AccountType, ConnectionStatus } from "@/generated/prisma/enums";
+import type { AccountType, AssetClass, ConnectionStatus } from "@/generated/prisma/enums";
 import { localDateOf } from "@/lib/dates";
 import { decimalToCents } from "@/lib/finance/money";
 
@@ -59,4 +59,23 @@ export function toLocalDate(value: string): string {
   const instant = new Date(value);
   if (Number.isNaN(instant.getTime())) throw new RangeError(`Data inválida da Pluggy: ${value}`);
   return localDateOf(instant);
+}
+
+/**
+ * Tipo/subtipo de investimento da Pluggy → nossa classe. FII vem como EQUITY/REAL_ESTATE_FUND; ETF e BDR
+ * contam como ação; COE e Tesouro, como renda fixa. Desconhecido vira fundo (aparece, não some).
+ */
+export function toAssetClass(type: string, subtype: string | null | undefined): AssetClass {
+  const sub = (subtype ?? "").toUpperCase();
+  if (sub.includes("CRYPTO")) return "CRIPTO";
+  if (sub === "REAL_ESTATE_FUND") return "FII";
+  if (type === "EQUITY" || type === "ETF") return "ACAO";
+  if (type === "FIXED_INCOME" || type === "COE" || sub === "TREASURY") return "RENDA_FIXA";
+  return "FUNDO";
+}
+
+/** Quantidade como texto decimal sem notação científica (o banco guarda Decimal com 10 casas). */
+export function toQuantity(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "0";
+  return value.toFixed(10).replace(/\.?0+$/, "");
 }

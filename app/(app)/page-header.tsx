@@ -1,7 +1,13 @@
 import type { ReactNode } from "react";
 import { HideValuesButton } from "@/components/ui/hide-values";
-import { AccountButton } from "@/components/ui/navigation";
+import { AccountMenu } from "@/components/ui/account-menu";
 import { Eyebrow } from "@/components/ui/text";
+
+const ACCOUNT_LINKS = [
+  { href: "/carteira", label: "Carteira", icon: "wallet" },
+  { href: "/alertas", label: "Alertas", icon: "bell" },
+  { href: "/config", label: "Config", icon: "sliders" },
+] as const;
 
 /** Cabeçalho das telas: rótulo da tela à esquerda, avatar (Carteira e Config) à direita. */
 export function PageHeader({ title, trailing }: { title: string; trailing?: ReactNode }) {
@@ -11,7 +17,7 @@ export function PageHeader({ title, trailing }: { title: string; trailing?: Reac
       <div className="flex items-center gap-2">
         {trailing}
         <HideValuesButton />
-        <AccountButton href="/config" />
+        <AccountMenu links={ACCOUNT_LINKS} />
       </div>
     </header>
   );

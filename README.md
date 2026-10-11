@@ -30,6 +30,10 @@ Com `GEMINI_API_KEY` e `GEMINI_MODEL` (o nome do modelo, ex.: o Flash mais recen
 
 Gere as chaves uma vez com `npx web-push generate-vapid-keys` e defina nas Variables do app `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` (ex.: `mailto:voce@exemplo.com`). Depois, no celular, ligue em Config → Notificações. No iPhone, instale o app na tela de início antes (Safari → Compartilhar → Adicionar à Tela de Início) e abra por lá. O que vira notificação se escolhe em Config → Alertas. Trocar as chaves invalida as inscrições: é preciso ligar de novo em cada aparelho.
 
+### Carteira (opcional)
+
+Os investimentos da Pluggy entram sozinhos no sync (se o MeuPluggy tiver). Para o preço de ação, FII e cripto, crie um token gratuito em brapi.dev e defina `BRAPI_TOKEN` nas Variables: o cron busca uma cotação por ativo, uma vez por dia. CDI, Selic e IPCA vêm do Banco Central sem token. Sem a brapi, essas posições ficam com o valor que o banco informa (ou o custo).
+
 ### Sync diário (Railway Cron)
 
 1. No app, em Variables: `CRON_SECRET` = saída de `openssl rand -hex 32`.

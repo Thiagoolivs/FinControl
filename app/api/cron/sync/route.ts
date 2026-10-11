@@ -1,7 +1,9 @@
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
+import { refreshBenchmarks, refreshQuotes } from "@/lib/market/refresh";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
+import { recordPortfolioSnapshot } from "@/lib/portfolio/queries";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 import { bearerToken, secretsMatch } from "@/lib/security/secret";
 import { syncUser } from "@/lib/sync/sync";
@@ -43,5 +45,32 @@ export async function POST(request: Request) {
           },
     );
   }
-  return Response.json({ ok, usuarios: report }, { status: ok ? 200 : 207 });
+  const mercado = await refreshMarket();
+  return Response.json({ ok, usuarios: report, mercado }, { status: ok ? 200 : 207 });
+}
+
+/**
+ * Depois das conexões: cotações (brapi, uma por ativo, cache de 12h), CDI/Selic/IPCA (SGS) e a foto do
+ * dia de cada carteira. Falha aqui não derruba o sync: vai para o relatório.
+ */
+async function refreshMarket() {
+  const result: { cotacoes: number; falhas: string[]; indices: number; carteiras: number } = { cotacoes: 0, falhas: [], indices: 0, carteiras: 0 };
+  try {
+    const quotes = await refreshQuotes();
+    result.cotacoes = quotes.updated;
+    result.falhas.push(...quotes.failed);
+  } catch (error) {
+    result.falhas.push(`brapi: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  try {
+    result.indices = await refreshBenchmarks();
+  } catch (error) {
+    result.falhas.push(`SGS: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const owners = await db().holding.findMany({ distinct: ["userId"], select: { userId: true } });
+  for (const { userId } of owners) {
+    await recordPortfolioSnapshot(userId);
+    result.carteiras += 1;
+  }
+  return result;
 }

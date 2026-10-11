@@ -48,6 +48,8 @@ lib/
   projection/     server-only: detecção das séries recorrentes (RecurringSeries) e montagem da projeção com premissas
   alerts/         catalog.ts (tipos, padrões, parâmetros, tela de cada alerta; puro), regras, avaliação no fim do sync, central
   push/           envio Web Push (web-push + VAPID), remoção de inscrição 404/410
+  market/         brapi (cotação, 1 ativo por requisição, cache Quote 12h) e SGS/BCB (CDI, Selic, IPCA); só no cron ou em ação do servidor
+  portfolio/      posições com valor de hoje, alocação × alvo, foto diária (PortfolioSnapshot), rentabilidade × CDI, posições manuais
   ai/             cliente do Gemini (fetch + zod, resposta JSON validada)
   charts/         escalas de gráfico
   security/       rate limit
@@ -83,6 +85,7 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
 - Alertas: avaliados no fim de cada sync (`evaluateAlerts`); o mesmo fato nunca vira dois (`dedupeKey` único). Push só das regras com `push` (padrão: severidade alta), um por sync (agrupado por tag), e a notificação abre a tela do alerta. Permissão só pelo botão em Config → Notificações; no iPhone, só com o app instalado. Texto do alerta é gravado pronto; na tela, valores em R$ passam pela máscara de "ocultar valores".
+- Carteira: quantidade e custo vêm da Pluggy (conta INVESTMENT por conexão, fora dos totais) ou de posição manual. Ação/FII/cripto valem quantidade × cotação (`quantityTimesCents`, sem float); renda fixa e fundo, o valor informado. A brapi nunca é chamada no render. Rentabilidade no período = ganho descontando aporte/resgate (variação do custo) sobre o valor inicial, contra o CDI composto nos mesmos dias. **O app nunca recomenda compra ou venda**: mostra só o desvio da alocação-alvo do usuário.
 - PWA: `app/manifest.ts`, `app/icon.svg`, `app/apple-icon.png`. O service worker não guarda nenhum dado financeiro: navegação sempre na rede, sem rede mostra `offline.html`. Arquivos que o navegador busca para instalar ficam fora do `proxy.ts`.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.
 - Módulos que tocam sessão ou dados importam `server-only`. Módulos puros (`lib/auth/password.ts`, `totp.ts`, `crypto.ts`, `lib/finance/*`) não, para os scripts conseguirem usá-los.

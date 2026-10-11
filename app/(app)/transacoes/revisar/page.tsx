@@ -50,7 +50,7 @@ export default async function ReviewPage() {
       ) : null}
       {total > 0 && !ai ? (
         <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
-          Com <code>GEMINI_API_KEY</code> nas variáveis do Railway, a IA sugere categoria e padrão para cada grupo.
+          Com <code>GEMINI_API_KEY</code> e <code>GEMINI_MODEL</code> nas variáveis do Railway, a IA sugere categoria e padrão para cada grupo.
         </p>
       ) : null}
 

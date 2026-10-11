@@ -13,7 +13,7 @@ const schema = z.object({
   // Só para testes locais contra um servidor falso; em produção fica vazia.
   PLUGGY_API_URL: z.url().optional(),
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().optional(),
+  GEMINI_MODEL: z.string().trim().min(1).optional(), // nome do modelo, ex.: o flash mais recente
   // Só para testes locais contra um servidor falso; em produção fica vazia.
   GEMINI_API_URL: z.url().optional(),
   BRAPI_TOKEN: z.string().optional(),

@@ -139,7 +139,7 @@ export default async function ConfigPage() {
         <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
           {isGeminiConfigured()
             ? "Sugestões da IA ligadas: as descrições das saídas sem categoria vão para o Gemini (Google), sem valores nem contas."
-            : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY nas variáveis do Railway."}
+            : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY e GEMINI_MODEL nas variáveis do Railway."}
         </p>
       </section>
 

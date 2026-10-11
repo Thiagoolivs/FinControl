@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { shareBps } from "@/lib/finance/share";
 import { cn } from "./cn";
@@ -96,7 +97,18 @@ type BalanceCompositionProps = {
   total: { label: string; cents: number; href?: string };
 };
 
-/** Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. A legenda carrega os valores. */
+function SegmentLink({ href, children }: { href?: string; children: ReactNode }) {
+  const className = "flex min-h-11 flex-col justify-center gap-0.5 text-text-primary no-underline";
+  return href ? (
+    <Link href={href} className={cn(className, "transition-opacity duration-200 ease-apple active:opacity-60")}>
+      {children}
+    </Link>
+  ) : (
+    <div className={className}>{children}</div>
+  );
+}
+
+/** Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. Legenda em duas colunas. */
 export function BalanceComposition({ segments, total }: BalanceCompositionProps) {
   const visible = segments.filter((segment) => segment.cents > 0);
   const visibleTotal = visible.reduce((sum, segment) => sum + segment.cents, 0);
@@ -114,26 +126,24 @@ export function BalanceComposition({ segments, total }: BalanceCompositionProps)
           ))}
         </div>
       ) : null}
-      <ul className="m-0 mt-2 flex list-none flex-col p-0">
+      <ul className="m-0 mt-4 grid list-none grid-cols-2 gap-x-6 gap-y-3 p-0">
         {segments.map((segment) => (
-          <li key={segment.key}>
-            <RowLink href={segment.href}>
-              <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
-              <span className="flex flex-1 items-center gap-2 text-[15px] font-medium">
-                {segment.label}
+          <li key={segment.key} className="min-w-0">
+            <SegmentLink href={segment.href}>
+              <span className="flex items-center gap-2 text-[13px] text-text-secondary">
+                <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
+                <span className="truncate">{segment.label}</span>
                 {segment.key === "reservado" || segment.key === "negocio" ? <ScopeTag scope="PJ" /> : null}
               </span>
-              <Money cents={segment.cents} className={cn("text-[15px]", segment.cents < 0 && "text-negative")} />
-            </RowLink>
+              <Money cents={segment.cents} className={cn("pl-4 text-[16px]", segment.cents < 0 && "text-negative")} />
+            </SegmentLink>
           </li>
         ))}
-        <li className="mt-1">
-          <RowLink href={total.href}>
-            <span className="flex-1 text-[15px] text-text-secondary">{total.label}</span>
-            <Money cents={total.cents} className="text-[15px]" />
-          </RowLink>
-        </li>
       </ul>
+      <RowLink href={total.href} className="mt-3">
+        <span className="flex-1 text-[15px] text-text-secondary">{total.label}</span>
+        <Money cents={total.cents} className="text-[15px]" />
+      </RowLink>
     </div>
   );
 }

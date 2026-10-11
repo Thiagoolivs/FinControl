@@ -38,8 +38,8 @@ export async function getAccounts(userId: string, query: ScopeQuery) {
   });
 }
 
-/** Transações dos últimos `days` dias, incluindo hoje. */
-export async function getRecentTransactions(userId: string, query: ScopeQuery, days: number) {
+/** Transações dos últimos `days` dias, incluindo hoje (as `limit` mais recentes, se pedido). */
+export async function getRecentTransactions(userId: string, query: ScopeQuery, days: number, limit?: number) {
   const from = addDays(todayLocal(), -(days - 1));
   return db().transaction.findMany({
     where: { userId, ...scopeWhere(query), isIgnored: false, date: { gte: toDbDate(from) } },
@@ -57,6 +57,7 @@ export async function getRecentTransactions(userId: string, query: ScopeQuery, d
       category: { select: { kind: true } },
     },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    ...(limit ? { take: limit } : {}),
   });
 }
 

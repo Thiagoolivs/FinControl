@@ -1,81 +1,115 @@
 import Link from "next/link";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { BalanceComposition, BalanceHero } from "@/components/ui/balance-hero";
-import { CategoryBar } from "@/components/ui/category-bar";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Icon, isIconName } from "@/components/ui/icon";
+import { InsightList } from "@/components/ui/insight-list";
 import { Money } from "@/components/ui/money";
-import { RowLink } from "@/components/ui/row-link";
-import { StatRow } from "@/components/ui/stat-row";
+import { MoneyWaffle } from "@/components/ui/money-waffle";
+import { MonthScore } from "@/components/ui/month-score";
+import { Section } from "@/components/ui/section";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
-import { Eyebrow, ScopeTag } from "@/components/ui/text";
 import { TransactionList } from "@/components/ui/transaction-item";
-import { requireUser } from "@/lib/auth/dal";
-import { formatElapsed, formatMoment, todayLocal } from "@/lib/dates";
-import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
-import { summarizeFlows } from "@/lib/finance/flows";
 import { getAlerts } from "@/lib/alerts/queries";
+import { requireUser } from "@/lib/auth/dal";
+import { formatElapsed, formatMoment, formatMonthLabel, todayLocal } from "@/lib/dates";
+import { db } from "@/lib/db";
+import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
+import { monthInsights } from "@/lib/finance/insights";
+import { perHundred, savingsRateBps } from "@/lib/finance/month-flow";
+import { monthAchievements, savingsStreak } from "@/lib/finance/month-score";
+import { formatBps, shareBps } from "@/lib/finance/share";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
+import { getMonthOverview } from "@/lib/queries/month-flow";
 import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
-import { getMonthSpendByCategory } from "@/lib/queries/transactions";
+import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
+import { countReviewQueue } from "@/lib/rules/queue";
 import { categoryOverThresholdBps, connectionAlertRules } from "@/lib/sync/alerts";
 import { manualRefreshAvailableAt } from "@/lib/sync/sync";
 import { AlertList } from "./alertas/alert-list";
 import { connectionIssues } from "./connection-health";
 import { PAGE_CLASS, PageHeader } from "./page-header";
-import { groupByDay, isTransferRow, toTransactionItem } from "./transaction-groups";
 import { RefreshButton } from "./refresh-button";
 import { ScopeFilter } from "./scope-filter";
+import { groupByDay, isTransferRow, toTransactionItem } from "./transaction-groups";
 
 const RECENT_DAYS = 30;
+const RECENT_ITEMS = 5;
 const HOME_ALERTS = 3;
-
-const ACCOUNT_KIND = { CHECKING: "Conta corrente", SAVINGS: "Poupança", CREDIT: "Cartão", INVESTMENT: "Investimento" } as const;
-const accountTotal = (account: { balanceCents: number; autoInvestedCents: number; savedCents: number }) =>
-  account.balanceCents + account.autoInvestedCents + account.savedCents;
+const TOP_AREAS = 5;
 
 export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
   const query = parseScopeParam((await searchParams).escopo);
   const scopeValue: ScopeValue = query.consolidated ? "TUDO" : query.scope;
+  const today = todayLocal();
+  const month = today.slice(0, 7);
 
-  const month = todayLocal().slice(0, 7);
-  const [connections, accounts, buckets, transactions, refreshAt, rules, spend, overBps, alerts] = await Promise.all([
+  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
     getBucketTotals(user.id, query),
-    getRecentTransactions(user.id, query, RECENT_DAYS),
+    getRecentTransactions(user.id, query, RECENT_DAYS, RECENT_ITEMS),
     manualRefreshAvailableAt(user.id),
     connectionAlertRules(user.id),
-    getMonthSpendByCategory(user.id, query, month),
-    categoryOverThresholdBps(user.id),
     getAlerts(user.id, { unreadOnly: true, limit: 50 }),
+    getMonthOverview(user.id, query, today),
+    getMonthCategoryBreakdown(user.id, query, month),
+    categoryOverThresholdBps(user.id),
+    countReviewQueue(user.id),
+    db().user.findUniqueOrThrow({ where: { id: user.id }, select: { savingsTargetBps: true } }),
   ]);
   // Erro de conexão e consentimento já aparecem como aviso no topo, com o estado de agora.
   const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
   const balance = summarizeBalances(accounts);
   const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
-  const cashAccounts = accounts.filter((account) => account.type === "CHECKING" || account.type === "SAVINGS");
-  const cards = accounts.filter((account) => account.type === "CREDIT");
+  const hasCash = accounts.some((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
   const freshest = connections.reduce<Date | null>(
     (latest, connection) => (connection.lastSyncAt && (!latest || connection.lastSyncAt > latest) ? connection.lastSyncAt : latest),
     null,
   );
 
-  const flows = summarizeFlows(transactions.map((row) => ({ amountCents: row.amountCents, isTransfer: isTransferRow(row) })));
-  const groups = groupByDay(transactions, todayLocal(), (row) =>
+  const { flow } = overview;
+  const hundred = perHundred(flow);
+  const areas = breakdown.filter((row) => row.id !== "sem");
+  const overAverage = (ratio: number | null) => overBps !== null && ratio !== null && ratio >= overBps;
+  const namesOf = (kind: "ESSENCIAL" | "VARIAVEL") =>
+    areas
+      .filter((row) => row.kind === kind)
+      .slice(0, 3)
+      .map((row) => row.name)
+      .join(", ");
+  const insights = monthInsights({
+    flow,
+    areas: areas.map((row) => ({ name: row.name, cents: row.cents, ratioBps: row.averageRatioBps })),
+    overThresholdBps: overBps,
+    lastMonthToDateCents: overview.lastMonthToDateCents,
+    dayOfMonth: Number(today.slice(8, 10)),
+  });
+  const hasHistory = areas.some((row) => row.averageRatioBps !== null);
+  const achievements = monthAchievements({
+    flow,
+    targetBps: settings.savingsTargetBps,
+    reviewCount,
+    lastMonthToDateCents: overview.lastMonthToDateCents,
+    overAverageAreas: overBps !== null && hasHistory ? areas.filter((row) => overAverage(row.averageRatioBps)).length : null,
+  });
+  const topAreas = breakdown.slice(0, TOP_AREAS);
+  const largestArea = topAreas[0]?.cents ?? 0;
+
+  const groups = groupByDay(recent, today, (row) =>
     toTransactionItem(row, isTransferRow(row) ? `${row.account.name} · transferência entre contas` : row.account.name, `/transacoes/${row.id}`),
   );
-
   const connectLink = (
     <Link href="/config" className="inline-flex min-h-11 items-center text-[15px] text-accent">
       Conectar banco
     </Link>
   );
   const scopeName = query.consolidated ? null : query.scope;
-  const heroStatus = connections.length === 0 || cashAccounts.length === 0 ? "empty" : "ready";
+  const monthName = formatMonthLabel(month).split(" ")[0] ?? "";
 
   return (
     <main className={PAGE_CLASS}>
@@ -100,20 +134,18 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       <BalanceHero
         amountCents={composition.availableCents}
         scope={scopeValue}
-        status={heroStatus}
+        status={connections.length === 0 || !hasCash ? "empty" : "ready"}
         caption={freshest ? `Dados do banco ${formatElapsed(freshest)}` : undefined}
         emptyTitle={connections.length === 0 ? "Nenhuma conta conectada." : `Nenhuma conta${scopeName ? ` ${scopeName}` : ""} com saldo.`}
         emptyDescription={
-          connections.length === 0
-            ? "Conecte um banco pelo Open Finance para ver o saldo aqui."
-            : "As contas aparecem depois da primeira leitura da Pluggy."
+          connections.length === 0 ? "Conecte um banco pelo Open Finance para ver o saldo aqui." : "As contas aparecem depois da primeira leitura da Pluggy."
         }
         emptyAction={connections.length === 0 ? connectLink : undefined}
         composition={
           <BalanceComposition
             segments={[
               { key: "disponivel", label: "Disponível", cents: composition.availableCents },
-              ...(composition.savedCents > 0 ? [{ key: "guardado" as const, label: "Guardado em caixinhas", cents: composition.savedCents, href: "/contas" }] : []),
+              ...(composition.savedCents > 0 ? [{ key: "guardado" as const, label: "Caixinhas", cents: composition.savedCents, href: "/contas" }] : []),
               { key: "reservado", label: "Reservado", cents: composition.reservedCents, href: "/reservas" },
               { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents, href: "/negocio" },
             ]}
@@ -122,94 +154,115 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         }
       />
 
-      {cashAccounts.length > 0 || cards.length > 0 ? (
-        <section aria-labelledby="contas" className="flex flex-col gap-1">
-          <Eyebrow as="h2" id="contas" className="pb-1">
-            Contas
-          </Eyebrow>
-          <ul className="m-0 flex list-none flex-col p-0">
-            {cashAccounts.map((account) => (
-              <li key={account.id}>
-                <RowLink href="/contas" className="min-h-[60px] py-2">
-                  <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span className="flex items-center gap-2 text-[15px] font-medium">
-                      <span className="truncate">{account.name}</span>
-                      <ScopeTag scope={account.scope} />
-                    </span>
-                    <span className="truncate text-[13px] text-text-secondary">
-                      {[account.connection?.institutionName, ACCOUNT_KIND[account.type]].filter(Boolean).join(" · ")}
-                      {account.currency !== "BRL" ? ` · ${account.currency}, fora do total` : ""}
-                    </span>
-                  </span>
-                  <Money cents={accountTotal(account)} className={accountTotal(account) < 0 ? "text-[17px] text-negative" : "text-[17px]"} />
-                </RowLink>
-              </li>
-            ))}
-          </ul>
-          {cards.length > 0 ? (
-            <StatRow
-              label={cards.length === 1 ? "Cartão de crédito" : `Cartões de crédito (${cards.length})`}
-              valueCents={balance.creditUsedCents}
-              hint="Limite usado, inclui parcelas futuras. Não sai do disponível."
-            />
-          ) : null}
-        </section>
-      ) : null}
-
-      {connections.length > 0 && spend.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <CategoryBar title="Gastos do mês" items={spend} overThresholdBps={overBps ?? Number.POSITIVE_INFINITY} />
-          <Link href="/transacoes/categorias" className="flex min-h-11 items-center self-start text-[15px] text-accent">
-            Ver todas as áreas
-          </Link>
-        </div>
-      ) : null}
-
-      {unreadAlerts.length > 0 ? (
-        <section aria-labelledby="alertas" className="flex flex-col gap-1">
-          <Eyebrow as="h2" id="alertas">
-            Alertas não lidos
-          </Eyebrow>
-          <AlertList
-            alerts={unreadAlerts.slice(0, HOME_ALERTS).map((alert) => ({
-              id: alert.id,
-              severity: alert.severity,
-              title: alert.title,
-              body: alert.body,
-              when: formatMoment(alert.createdAt),
-              read: false,
-              href: alert.href,
-            }))}
-          />
-          <Link href="/alertas" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
-            {unreadAlerts.length > HOME_ALERTS ? `Ver todos (${unreadAlerts.length})` : "Central de alertas"}
-          </Link>
-        </section>
-      ) : null}
-
       {connections.length > 0 ? (
-        <section aria-labelledby="recentes" className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <Eyebrow as="h2" id="recentes" className="pb-1">
-              Últimos {RECENT_DAYS} dias
-            </Eyebrow>
-            <StatRow label="Entradas" valueCents={flows.inCents} />
-            <StatRow
-              label="Saídas"
-              valueCents={flows.outCents}
-              hint={
-                flows.transferCount > 0
-                  ? `Sem transferências entre suas contas nem pagamento de fatura (${flows.transferCount} ${flows.transferCount === 1 ? "lançamento" : "lançamentos"})`
-                  : undefined
-              }
+        <div className="flex flex-col gap-16 pt-4 pb-4">
+          <Section id="para-onde" eyebrow={`${monthName} até hoje`} title="Para onde foi seu dinheiro">
+            {hundred ? (
+              <>
+                <dl className="m-0 grid grid-cols-2 gap-6">
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-[13px] text-text-secondary">Entrou</dt>
+                    <dd className="m-0">
+                      <Money cents={flow.incomeCents} kind={flow.incomeCents > 0 ? "in" : "neutral"} className="text-[22px] font-light tracking-[-0.01em]" />
+                    </dd>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-[13px] text-text-secondary">Saiu</dt>
+                    <dd className="m-0">
+                      <Money cents={flow.spentCents + flow.investedCents} className="text-[22px] font-light tracking-[-0.01em]" />
+                    </dd>
+                  </div>
+                </dl>
+                <MoneyWaffle
+                  data={hundred}
+                  legend={{
+                    essencial: { hint: namesOf("ESSENCIAL") || undefined, href: "/transacoes/categorias" },
+                    estilo: { hint: namesOf("VARIAVEL") || undefined, href: "/transacoes/categorias" },
+                    sem: { hint: "toque para dizer o que foi", href: "/transacoes/revisar" },
+                  }}
+                />
+                <InsightList insights={insights} links={{ sem: { href: "/transacoes/revisar", label: "Revisar" } }} />
+              </>
+            ) : (
+              <EmptyState compact title="Nada entrou nem saiu neste mês ainda." description="Transferências entre suas contas e pagamento de fatura não contam." />
+            )}
+          </Section>
+
+          {topAreas.length > 0 ? (
+            <Section id="areas" eyebrow="Gastos por área" title="Onde mais saiu">
+              <ul className="m-0 flex list-none flex-col gap-5 p-0">
+                {topAreas.map((row) => {
+                  const over = overAverage(row.averageRatioBps);
+                  return (
+                    <li key={row.id}>
+                      <Link
+                        href={row.id === "sem" ? "/transacoes/revisar" : `/transacoes?categoria=${row.id}&tipo=saidas`}
+                        className="flex min-h-11 flex-col gap-2 text-text-primary no-underline transition-opacity duration-200 ease-apple active:opacity-60"
+                      >
+                        <span className="flex items-center gap-3">
+                          <Icon name={isIconName(row.icon) ? row.icon : "dots"} size={20} className={over ? "shrink-0 text-warning" : "shrink-0 text-text-secondary"} />
+                          <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                            <span className="text-[16px] font-medium">{row.name}</span>
+                            <span className="text-[13px] text-text-secondary">{formatBps(shareBps(row.cents, flow.spentCents))}</span>
+                            {over && row.averageRatioBps !== null ? (
+                              <span className="text-[13px] text-warning">{formatBps(row.averageRatioBps - 10_000)} acima da média</span>
+                            ) : null}
+                          </span>
+                          <Money cents={row.cents} className="shrink-0 text-[16px]" />
+                        </span>
+                        <span aria-hidden="true" className="ml-8 h-1.5 rounded-full bg-text-primary/8">
+                          <span
+                            className={`block h-full rounded-full ${over ? "bg-warning" : "bg-text-primary/40"}`}
+                            style={{ width: `${Math.max(2, shareBps(row.cents, largestArea) / 100)}%` }}
+                          />
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Link href="/transacoes/categorias" className="flex min-h-11 items-center self-start text-[15px] text-accent">
+                Ver todas as áreas
+              </Link>
+            </Section>
+          ) : null}
+
+          <Section id="placar" eyebrow="Placar" title="Seu mês">
+            <MonthScore
+              savingsBps={savingsRateBps(flow)}
+              targetBps={settings.savingsTargetBps}
+              streak={savingsStreak(overview.closedMonths, settings.savingsTargetBps)}
+              achievements={achievements}
+              settingsHref="/config#placar"
             />
-          </div>
-          {transactions.length === 0 ? (
-            <EmptyState compact title="Nenhuma transação no período." />
-          ) : (
-            <TransactionList groups={groups} />
-          )}
-        </section>
+          </Section>
+
+          {unreadAlerts.length > 0 ? (
+            <Section id="alertas" eyebrow="Alertas" title={unreadAlerts.length === 1 ? "1 coisa para olhar" : `${unreadAlerts.length} coisas para olhar`}>
+              <AlertList
+                alerts={unreadAlerts.slice(0, HOME_ALERTS).map((alert) => ({
+                  id: alert.id,
+                  severity: alert.severity,
+                  title: alert.title,
+                  body: alert.body,
+                  when: formatMoment(alert.createdAt),
+                  read: false,
+                  href: alert.href,
+                }))}
+              />
+              <Link href="/alertas" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
+                {unreadAlerts.length > HOME_ALERTS ? `Ver todos (${unreadAlerts.length})` : "Central de alertas"}
+              </Link>
+            </Section>
+          ) : null}
+
+          <Section id="recentes" eyebrow="Movimento" title="Últimas transações">
+            {recent.length === 0 ? <EmptyState compact title={`Nenhuma transação nos últimos ${RECENT_DAYS} dias.`} /> : <TransactionList groups={groups} />}
+            <Link href="/transacoes" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
+              Ver todas as transações
+            </Link>
+          </Section>
+        </div>
       ) : null}
     </main>
   );

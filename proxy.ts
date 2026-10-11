@@ -9,5 +9,8 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!login|api/health|api/cron|_next/static|_next/image|favicon.ico).*)"],
+  // Fora da checagem: login, rotas com segredo próprio, estáticos e o que o navegador busca para instalar o app.
+  matcher: [
+    "/((?!login|api/health|api/cron|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|manifest.webmanifest|sw.js|offline.html|icons/).*)",
+  ],
 };

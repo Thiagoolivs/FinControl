@@ -191,6 +191,7 @@ model User {
   name             String?
   aboutMe          String?   @db.Text // "quem sou eu" no system prompt da IA
   reviewWindowDays Int?      @default(60) // fila de revisão só com os últimos N dias; null = tudo
+  savingsTargetBps Int       @default(2000) // meta de sobra do mês (placar da Hoje): 20% do que entrou
   timezone         String    @default("America/Sao_Paulo")
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

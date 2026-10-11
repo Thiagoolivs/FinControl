@@ -5,6 +5,7 @@ import { RowLink } from "@/components/ui/row-link";
 import { Eyebrow, ScopeTag } from "@/components/ui/text";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, localDateOf } from "@/lib/dates";
+import { formatPercentBps } from "@/lib/finance/money";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { db } from "@/lib/db";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
@@ -16,6 +17,7 @@ import { PAGE_CLASS, PageHeader } from "../page-header";
 import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
 import { AboutMeForm } from "./about-me";
+import { SavingsTargetForm } from "./savings-target";
 import { InstallApp } from "./install-app";
 import { NotificationSettings } from "./notifications";
 
@@ -32,7 +34,7 @@ export default async function ConfigPage() {
     connectionAlertRules(user.id),
     getCronHealth(user.id),
     db().rule.count({ where: { userId: user.id } }),
-    db().user.findUnique({ where: { id: user.id }, select: { aboutMe: true } }),
+    db().user.findUnique({ where: { id: user.id }, select: { aboutMe: true, savingsTargetBps: true } }),
   ]);
   const aboutMe = profile?.aboutMe ?? null;
   const configured = isPluggyConfigured();
@@ -155,6 +157,13 @@ export default async function ConfigPage() {
             ? "Sugestões da IA ligadas: as descrições das saídas sem categoria vão para o Gemini (Google), sem valores nem contas."
             : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY e GEMINI_MODEL nas variáveis do Railway."}
         </p>
+      </section>
+
+      <section aria-labelledby="placar-titulo" id="placar" className="flex scroll-mt-6 flex-col gap-3">
+        <h2 id="placar-titulo" className="m-0 text-[28px] font-light leading-8 tracking-[-0.02em]">
+          Placar do mês
+        </h2>
+        <SavingsTargetForm initial={profile ? formatPercentBps(profile.savingsTargetBps) : ""} />
       </section>
 
       <section aria-labelledby="chat" className="flex flex-col gap-3">

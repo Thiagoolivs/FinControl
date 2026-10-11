@@ -24,7 +24,7 @@ Para trocar a senha, mude `LOGIN_PASSWORD` e reinicie o serviço: o hash é atua
 
 ### Sugestões da IA (opcional)
 
-Com `GEMINI_API_KEY` nas Variables do app, a fila de revisão recebe sugestão de categoria e padrão para cada grupo (só as descrições vão para o Gemini, sem valores). `GEMINI_MODEL` troca o modelo (padrão `gemini-2.5-flash`). Sem a chave, a fila funciona igual, sem sugestões.
+Com `GEMINI_API_KEY` e `GEMINI_MODEL` (o nome do modelo, ex.: o Flash mais recente listado no Google AI Studio) nas Variables do app, a fila de revisão recebe sugestão de categoria e padrão para cada grupo (só as descrições vão para o Gemini, sem valores). O modelo não é fixo no código: para trocar, mude a variável e reinicie. Sem as duas, a fila funciona igual, sem sugestões.
 
 ### Sync diário (Railway Cron)
 

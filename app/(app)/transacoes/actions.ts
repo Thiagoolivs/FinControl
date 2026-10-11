@@ -49,7 +49,7 @@ export async function ignoreSuggestionAction(suggestionId: string): Promise<Acti
 
 export async function suggestNowAction(): Promise<ActionState> {
   const user = await requireUser();
-  if (!isGeminiConfigured()) return { error: "Defina GEMINI_API_KEY no Railway para receber sugestões da IA." };
+  if (!isGeminiConfigured()) return { error: "Defina GEMINI_API_KEY e GEMINI_MODEL no Railway para receber sugestões da IA." };
   if (!aiLimiter.hit(user.id).allowed) return { error: "Muitos pedidos seguidos. Espere um pouco." };
   try {
     const created = await suggestWithAi(user.id);

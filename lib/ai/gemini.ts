@@ -3,14 +3,14 @@ import { z } from "zod";
 import { serverEnv } from "@/lib/env";
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
-// Troque por GEMINI_MODEL quando sair um modelo melhor; o código não depende do nome.
-const DEFAULT_MODEL = "gemini-2.5-flash";
 const REQUEST_TIMEOUT_MS = 60_000;
 
 export class GeminiError extends Error {}
 
+/** O modelo não é fixo no código: vem de GEMINI_MODEL. Sem chave ou sem modelo, a IA fica desligada. */
 export function isGeminiConfigured(): boolean {
-  return Boolean(serverEnv().GEMINI_API_KEY);
+  const env = serverEnv();
+  return Boolean(env.GEMINI_API_KEY && env.GEMINI_MODEL);
 }
 
 const responseBody = z.object({
@@ -35,8 +35,8 @@ export type ResponseSchema = {
  */
 export async function generateJson<T>(options: { system: string; prompt: string; schema: ResponseSchema; parse: z.ZodType<T> }): Promise<T> {
   const env = serverEnv();
-  if (!env.GEMINI_API_KEY) throw new GeminiError("GEMINI_API_KEY não definida.");
-  const model = env.GEMINI_MODEL ?? DEFAULT_MODEL;
+  if (!env.GEMINI_API_KEY || !env.GEMINI_MODEL) throw new GeminiError("Defina GEMINI_API_KEY e GEMINI_MODEL.");
+  const model = env.GEMINI_MODEL;
   const response = await fetch(`${env.GEMINI_API_URL ?? DEFAULT_BASE_URL}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },

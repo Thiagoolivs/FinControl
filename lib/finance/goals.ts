@@ -37,8 +37,8 @@ export function requiredAtMonthStart(goal: { targetCents: number; targetMonth: s
 }
 
 /**
- * Atrasada: o aporte necessário cresceu de um mês para o outro (começo do mês passado → começo deste),
- * ou o prazo passou sem a meta ser atingida. Meta criada neste mês ainda não tem com o que comparar.
+ * Atrasada: o aporte necessário subiu dois meses seguidos (começo de m−2 → m−1 → este), ou o prazo
+ * passou sem a meta ser atingida. Meta com menos de dois meses fechados ainda não tem com o que comparar.
  */
 export function isGoalLate(
   goal: { targetCents: number; currentCents: number; targetMonth: string; createdMonth: string },
@@ -47,8 +47,9 @@ export function isGoalLate(
 ): boolean {
   if (goal.currentCents >= goal.targetCents) return false;
   if (goal.targetMonth < currentMonth) return true;
-  if (goal.createdMonth >= currentMonth) return false;
-  return requiredAtMonthStart(goal, contributions, currentMonth) > requiredAtMonthStart(goal, contributions, addMonths(currentMonth, -1));
+  if (goal.createdMonth > addMonths(currentMonth, -2)) return false;
+  const [twoAgo, lastMonth, now] = [-2, -1, 0].map((offset) => requiredAtMonthStart(goal, contributions, addMonths(currentMonth, offset)));
+  return now !== undefined && lastMonth !== undefined && twoAgo !== undefined && now > lastMonth && lastMonth > twoAgo;
 }
 
 /**

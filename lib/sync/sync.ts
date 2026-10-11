@@ -8,7 +8,9 @@ import { toConnectionStatus } from "@/lib/pluggy/normalize";
 import { applyRules } from "@/lib/rules/apply";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { ensureDefaultCategories } from "@/lib/rules/categories";
+import { evaluateAlerts } from "@/lib/alerts/evaluate";
 import { refreshRecurringSeries } from "@/lib/projection/recurring";
+import { pushNewAlerts } from "@/lib/push/send";
 import { ensureObligationReservations, refreshBucketBalances } from "@/lib/streams/ledger";
 import { ensureStreamsSetup } from "@/lib/streams/setup";
 import { suggestWithAi } from "@/lib/rules/suggest";
@@ -160,6 +162,7 @@ export async function syncUser(
     select: { id: true },
   });
   if (running) return { status: "busy" };
+  const startedAt = new Date();
 
   const connections = await db().connection.findMany({
     where: { userId, ...(options.connectionId ? { id: options.connectionId } : {}) },
@@ -195,6 +198,13 @@ export async function syncUser(
         console.error("Sugestões da IA falharam:", error);
       }
     }
+  }
+  // Alertas no fim, com tudo já classificado. Os novos deste sync (inclusive erro de conexão) vão num push só.
+  try {
+    if (anyOk) await evaluateAlerts(userId, startedAt);
+    await pushNewAlerts(userId, startedAt);
+  } catch (error) {
+    console.error("Alertas falharam:", error);
   }
   return { status: "done", outcomes, transferencias, categorizadas };
 }

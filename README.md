@@ -26,6 +26,10 @@ Para trocar a senha, mude `LOGIN_PASSWORD` e reinicie o serviço: o hash é atua
 
 Com `GEMINI_API_KEY` e `GEMINI_MODEL` (o nome do modelo, ex.: o Flash mais recente listado no Google AI Studio) nas Variables do app, a fila de revisão recebe sugestão de categoria e padrão para cada grupo (só as descrições vão para o Gemini, sem valores). O modelo não é fixo no código: para trocar, mude a variável e reinicie. Sem as duas, a fila funciona igual, sem sugestões.
 
+### Notificações (Web Push, opcional)
+
+Gere as chaves uma vez com `npx web-push generate-vapid-keys` e defina nas Variables do app `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` (ex.: `mailto:voce@exemplo.com`). Depois, no celular, ligue em Config → Notificações. No iPhone, instale o app na tela de início antes (Safari → Compartilhar → Adicionar à Tela de Início) e abra por lá. O que vira notificação se escolhe em Config → Alertas. Trocar as chaves invalida as inscrições: é preciso ligar de novo em cada aparelho.
+
 ### Sync diário (Railway Cron)
 
 1. No app, em Variables: `CRON_SECRET` = saída de `openssl rand -hex 32`.

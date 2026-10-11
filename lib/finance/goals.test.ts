@@ -55,21 +55,28 @@ describe("requiredAtMonthStart", () => {
 });
 
 describe("isGoalLate", () => {
-  const base = { ...goal, createdMonth: "2026-09", currentCents: 0 };
+  const base = { ...goal, createdMonth: "2026-08", currentCents: 0 };
 
   it("no prazo quando aportou o necessário", () => {
     const paid = [
-      { date: "2026-09-10", amountCents: 93_000 }, // set: 12.000 / 13 = 923,08 → 924; pagou mais
+      { date: "2026-08-10", amountCents: 86_000 }, // ago: 12.000 / 14 = 857,15 → 858; pagou mais
+      { date: "2026-09-10", amountCents: 86_000 },
     ];
-    expect(isGoalLate({ ...base, currentCents: 93_000 }, paid, "2026-10")).toBe(false);
+    expect(isGoalLate({ ...base, currentCents: 172_000 }, paid, "2026-10")).toBe(false);
   });
 
-  it("atrasada quando o necessário cresceu de um mês para o outro", () => {
-    // set: 12.000 / 13 → 924; sem aporte, out: 12.000 / 12 → 1.000
+  it("atrasada quando o necessário subiu dois meses seguidos", () => {
+    // ago: 12.000 / 14 → 858; set: 12.000 / 13 → 924; out: 12.000 / 12 → 1.000
     expect(isGoalLate(base, [], "2026-10")).toBe(true);
   });
 
-  it("meta criada neste mês não está atrasada", () => {
+  it("uma alta só (mês pulado e depois retomado) não é atraso", () => {
+    // ago: 858; set (sem aporte em ago): 924; aportou 2.000 em set → out: 10.000 / 12 = 834
+    expect(isGoalLate({ ...base, currentCents: 200_000 }, [{ date: "2026-09-15", amountCents: 200_000 }], "2026-10")).toBe(false);
+  });
+
+  it("meta com menos de dois meses fechados não está atrasada", () => {
+    expect(isGoalLate({ ...base, createdMonth: "2026-09" }, [], "2026-10")).toBe(false);
     expect(isGoalLate({ ...base, createdMonth: "2026-10" }, [], "2026-10")).toBe(false);
   });
 

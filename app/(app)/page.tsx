@@ -13,12 +13,14 @@ import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, formatMoment, todayLocal } from "@/lib/dates";
 import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
 import { summarizeFlows } from "@/lib/finance/flows";
+import { getAlerts } from "@/lib/alerts/queries";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { getMonthSpendByCategory } from "@/lib/queries/transactions";
 import { categoryOverThresholdBps, connectionAlertRules } from "@/lib/sync/alerts";
 import { manualRefreshAvailableAt } from "@/lib/sync/sync";
+import { AlertList } from "./alertas/alert-list";
 import { connectionIssues } from "./connection-health";
 import { PAGE_CLASS, PageHeader } from "./page-header";
 import { groupByDay, isTransferRow, toTransactionItem } from "./transaction-groups";
@@ -26,6 +28,7 @@ import { RefreshButton } from "./refresh-button";
 import { ScopeFilter } from "./scope-filter";
 
 const RECENT_DAYS = 30;
+const HOME_ALERTS = 3;
 
 const ACCOUNT_KIND = { CHECKING: "Conta corrente", SAVINGS: "Poupança", CREDIT: "Cartão", INVESTMENT: "Investimento" } as const;
 
@@ -35,7 +38,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const scopeValue: ScopeValue = query.consolidated ? "TUDO" : query.scope;
 
   const month = todayLocal().slice(0, 7);
-  const [connections, accounts, buckets, transactions, refreshAt, rules, spend, overBps] = await Promise.all([
+  const [connections, accounts, buckets, transactions, refreshAt, rules, spend, overBps, alerts] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
     getBucketTotals(user.id, query),
@@ -44,7 +47,10 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     connectionAlertRules(user.id),
     getMonthSpendByCategory(user.id, query, month),
     categoryOverThresholdBps(user.id),
+    getAlerts(user.id, { unreadOnly: true, limit: 50 }),
   ]);
+  // Erro de conexão e consentimento já aparecem como aviso no topo, com o estado de agora.
+  const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
   const balance = summarizeBalances(accounts);
   const composition = composeBalance({ grossCents: balance.cashCents, ...buckets });
@@ -154,6 +160,28 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
             Ver todas as áreas
           </Link>
         </div>
+      ) : null}
+
+      {unreadAlerts.length > 0 ? (
+        <section aria-labelledby="alertas" className="flex flex-col gap-1">
+          <Eyebrow as="h2" id="alertas">
+            Alertas não lidos
+          </Eyebrow>
+          <AlertList
+            alerts={unreadAlerts.slice(0, HOME_ALERTS).map((alert) => ({
+              id: alert.id,
+              severity: alert.severity,
+              title: alert.title,
+              body: alert.body,
+              when: formatMoment(alert.createdAt),
+              read: false,
+              href: alert.href,
+            }))}
+          />
+          <Link href="/alertas" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
+            {unreadAlerts.length > HOME_ALERTS ? `Ver todos (${unreadAlerts.length})` : "Central de alertas"}
+          </Link>
+        </section>
       ) : null}
 
       {connections.length > 0 ? (

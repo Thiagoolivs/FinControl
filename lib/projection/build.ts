@@ -45,10 +45,10 @@ const perMonth = (totalCents: number, months: number) => (months > 0 ? Math.floo
  * Projeção de 12 meses do saldo pessoal (realista e com projetos) e do caixa do negócio, com as premissas
  * que entraram nela. PF e PJ só somam quando o chamador pede `consolidated: true`.
  */
-export async function getProjection(userId: string, query: ScopeQuery): Promise<Projection> {
+export async function getProjection(userId: string, query: ScopeQuery, options: { refreshRecurring?: boolean } = {}): Promise<Projection> {
   const today = todayLocal();
   const currentMonth = today.slice(0, 7);
-  await refreshRecurringSeries(userId, today);
+  if (options.refreshRecurring !== false) await refreshRecurringSeries(userId, today);
   const scope = scopeWhere(query);
   const includesPj = query.consolidated === true || query.scope === "PJ";
 

@@ -46,6 +46,8 @@ lib/
   streams/        server-only: configuração inicial (streams, buckets, DAS), razão dos buckets, mutações e consultas
   goals/          server-only: metas iniciais, progresso (cache + GoalSnapshot do mês), aportes
   projection/     server-only: detecção das séries recorrentes (RecurringSeries) e montagem da projeção com premissas
+  alerts/         catalog.ts (tipos, padrões, parâmetros, tela de cada alerta; puro), regras, avaliação no fim do sync, central
+  push/           envio Web Push (web-push + VAPID), remoção de inscrição 404/410
   ai/             cliente do Gemini (fetch + zod, resposta JSON validada)
   charts/         escalas de gráfico
   security/       rate limit
@@ -66,7 +68,7 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Toda query filtra por `userId` na própria query (coluna direta). Nunca no cliente.
 - Nenhuma query soma PF e PJ sem o chamador passar `consolidated: true`.
 - Transferência entre contas próprias e pagamento de fatura não são despesa.
-- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`), calculado no começo do mês a partir do histórico de aportes (meses de aporte contam o corrente). Atrasada = esse valor subiu do mês passado para este, ou o prazo venceu. Aporte no dia da criação é saldo inicial. Ritmo = média dos últimos 3 meses fechados, sem o mês de criação.
+- Aporte mensal de meta: arredondado para cima em reais inteiros (`lib/finance/goals.ts`), calculado no começo do mês a partir do histórico de aportes (meses de aporte contam o corrente). Atrasada = esse valor subiu dois meses seguidos, ou o prazo venceu. Aporte no dia da criação é saldo inicial. Ritmo = média dos últimos 3 meses fechados, sem o mês de criação.
 - Projeção (`lib/finance/projection.ts`): parte do disponível menos a fatura em aberto (limite usado − parcelas futuras). Entram só premissas visíveis: recorrentes (±10%, intervalo regular, 3+ ocorrências; receita sem as reservas da stream), parcelas futuras, média de 3 meses fechados dos gastos variáveis, aportes das metas e obrigações fixas. Projeto avulso só na faixa otimista; negócio em linha separada; retirada não é projetada.
 - Pluggy: conta bancária mantém o sinal; cartão vem com compra positiva e é invertido na ingestão. Dedup por `pluggyTransactionId`; PENDING que some da janela lida é removida.
 - Transferência = par saída/entrada de mesmo valor em contas diferentes, até 3 dias (`lib/finance/transfers.ts`); as duas pernas apontam uma para a outra (`transferPeerId`) e recebem a categoria de sistema `TRANSFERENCIA`. Saída de cartão nunca é perna.
@@ -80,6 +82,7 @@ proxy.ts          checagem otimista de sessão (a validação real é no servido
 - Limpeza de descrição é idempotente e roda de novo no histórico a cada boot (`lib/rules/reclean.ts`): mudar `clean.ts` vale para tudo no próximo deploy. Regra criada de sugestão aceita sem mudança = `IA_CONFIRMADA` e vai para o `AuditLog` com origem `AI`.
 - Ler da Pluggy não dispara atualização no banco. Reconectar sempre no modo atualização do item existente; nunca criar item novo para conexão existente.
 - Valores de negócio (DAS, teto do MEI, % de reserva, metas, limites de alerta) são **parametrizáveis** pelo usuário — nunca constantes no código; o seed só cria valores iniciais.
+- Alertas: avaliados no fim de cada sync (`evaluateAlerts`); o mesmo fato nunca vira dois (`dedupeKey` único). Push só das regras com `push` (padrão: severidade alta), um por sync (agrupado por tag), e a notificação abre a tela do alerta. Permissão só pelo botão em Config → Notificações; no iPhone, só com o app instalado. Texto do alerta é gravado pronto; na tela, valores em R$ passam pela máscara de "ocultar valores".
 - PWA: `app/manifest.ts`, `app/icon.svg`, `app/apple-icon.png`. O service worker não guarda nenhum dado financeiro: navegação sempre na rede, sem rede mostra `offline.html`. Arquivos que o navegador busca para instalar ficam fora do `proxy.ts`.
 - Segredos só no servidor. Nada de `NEXT_PUBLIC_`, exceto a chave VAPID pública.
 - Módulos que tocam sessão ou dados importam `server-only`. Módulos puros (`lib/auth/password.ts`, `totp.ts`, `crypto.ts`, `lib/finance/*`) não, para os scripts conseguirem usá-los.

@@ -25,7 +25,8 @@ import { InsightList } from "@/components/ui/insight-list";
 import { MoneyWaffle } from "@/components/ui/money-waffle";
 import { MonthScore } from "@/components/ui/month-score";
 import { Section } from "@/components/ui/section";
-import { ACHIEVEMENTS, GOALS, INSIGHTS, MONTH_FLOWS, NAV_ITEMS, PROJECTION, PROPOSAL_ROWS, RULE_OPTIONS, SCOPES } from "./fixtures";
+import { SpendCard } from "@/components/ui/spend-card";
+import { ACHIEVEMENTS, GOALS, INSIGHTS, MONTH_FLOWS, NAV_ITEMS, PROJECTION, PROPOSAL_ROWS, RULE_OPTIONS, SCOPES, SPEND_CURVE } from "./fixtures";
 
 const ALL_STATES: readonly SegmentOption<ViewStatus>[] = [
   { value: "ready", label: "Padrão" },
@@ -56,6 +57,12 @@ const SCORE_STATES: readonly SegmentOption<"bateu" | "falta" | "vazio">[] = [
   { value: "bateu", label: "Meta batida" },
   { value: "falta", label: "Falta" },
   { value: "vazio", label: "Nada entrou" },
+];
+
+const SPEND_STATES: readonly SegmentOption<"subiu" | "caiu" | "sem-base">[] = [
+  { value: "subiu", label: "Gastou mais" },
+  { value: "caiu", label: "Gastou menos" },
+  { value: "sem-base", label: "Sem mês passado" },
 ];
 
 const OVER_AVERAGE_BPS = 12_000;
@@ -142,6 +149,21 @@ export function Catalog() {
             </Section>
           ) : null;
         }}
+      </Showcase>
+
+      <Showcase name="SpendCard" states={SPEND_STATES}>
+        {(state) => (
+          <SpendCard
+            icon="food"
+            title="Gastos com Delivery neste mês"
+            cents={state === "caiu" ? 52_900 : (SPEND_CURVE.current.at(-1) ?? 0)}
+            variationBps={state === "subiu" ? 6_011 : state === "caiu" ? -1_820 : null}
+            current={state === "caiu" ? SPEND_CURVE.current.map((cents) => Math.round(cents * 0.5)) : SPEND_CURVE.current}
+            previous={state === "sem-base" ? [] : SPEND_CURVE.previous}
+            daysInMonth={SPEND_CURVE.daysInMonth}
+            href="#"
+          />
+        )}
       </Showcase>
 
       <Showcase name="MonthScore" states={SCORE_STATES}>

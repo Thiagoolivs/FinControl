@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monthInsights } from "./insights";
+import { type HighlightCandidate, monthInsights, pickHighlight } from "./insights";
 import type { MonthFlow } from "./month-flow";
 
 const flow = (partial: Partial<MonthFlow>): MonthFlow => ({
@@ -46,5 +46,30 @@ describe("monthInsights", () => {
     expect(monthInsights({ flow: flow({ incomeCents: 10_000, leftoverCents: 10_000 }), areas: [], overThresholdBps: 12_000, lastMonthToDateCents: null, dayOfMonth: 2 })).toEqual([]);
     const tidy = flow({ essentialCents: 95_000, uncategorizedCents: 5_000, spentCents: 100_000 });
     expect(monthInsights({ flow: tidy, areas: [], overThresholdBps: null, lastMonthToDateCents: 100_000, dayOfMonth: 9 })).toEqual([]);
+  });
+});
+
+describe("pickHighlight", () => {
+  const candidate = (name: string, cents: number, lastMonthToDateCents: number | null): HighlightCandidate => ({ id: name, name, icon: "dots", cents, lastMonthToDateCents });
+
+  it("o maior que cresceu além do limite vira a manchete", () => {
+    const result = pickHighlight([candidate("Restaurantes", 120_000, 110_000), candidate("Delivery", 84_700, 52_900), candidate("Lazer", 30_000, 5_000)], 2_000);
+    expect(result).toEqual({ id: "Delivery", name: "Delivery", icon: "dots", cents: 84_700, lastMonthToDateCents: 52_900, variationBps: 6_011, reason: "cresceu" });
+  });
+
+  it("crescimento pequeno demais (menos de um quarto do maior) não disputa", () => {
+    const result = pickHighlight([candidate("Restaurantes", 120_000, 110_000), candidate("Lazer", 29_000, 5_000)], 2_000);
+    expect(result?.name).toBe("Restaurantes");
+    expect(result?.reason).toBe("maior");
+    expect(result?.variationBps).toBe(909);
+  });
+
+  it("sem limite ou sem mês passado, fica o maior", () => {
+    expect(pickHighlight([candidate("Delivery", 84_700, 10_000), candidate("Lazer", 90_000, null)], null)).toMatchObject({ name: "Lazer", reason: "maior", variationBps: null });
+  });
+
+  it("sem gasto, sem manchete", () => {
+    expect(pickHighlight([candidate("Lazer", 0, 1_000)], 2_000)).toBeNull();
+    expect(pickHighlight([], 2_000)).toBeNull();
   });
 });

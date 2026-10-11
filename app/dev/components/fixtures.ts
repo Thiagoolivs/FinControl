@@ -211,3 +211,14 @@ export const ACHIEVEMENTS: Achievement[] = [
   { key: "investiu", title: "Investiu", done: true, detail: "Separou dinheiro para o futuro." },
   { key: "meta", title: "Guardar 20% do que entrou", done: true, detail: "Sobrou 25% até agora." },
 ];
+
+// Delivery: acumulado de outubro até o dia 11 contra setembro inteiro.
+const DELIVERY_SEPTEMBER_DAYS = [0, 4_590, 0, 0, 6_200, 0, 3_890, 0, 0, 5_400, 0, 4_100, 0, 0, 3_290, 0, 0, 6_800, 0, 0, 2_990, 0, 4_400, 0, 0, 5_100, 0, 0, 3_700, 0];
+const DELIVERY_OCTOBER_DAYS = [8_990, 0, 12_500, 0, 9_400, 14_800, 0, 11_200, 0, 13_400, 14_410];
+const accumulate = (days: number[]) => days.reduce<number[]>((curve, cents) => [...curve, (curve.at(-1) ?? 0) + cents], []);
+
+export const SPEND_CURVE = {
+  current: accumulate(DELIVERY_OCTOBER_DAYS),
+  previous: accumulate(DELIVERY_SEPTEMBER_DAYS),
+  daysInMonth: 31,
+};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addMonths, daysBetween, formatMonthLabel, isMonth, monthRange, formatDayLabel, formatElapsed, formatMoment, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
+import { addDays, addMonths, daysBetween, formatMonthLabel, isMonth, monthRange, monthsBetween, formatDayLabel, formatElapsed, formatMoment, fromDbDate, localDateOf, toDbDate, todayLocal } from "./dates";
 
 describe("localDateOf", () => {
   it("usa o dia de São Paulo, não o de UTC", () => {
@@ -78,5 +78,14 @@ describe("meses", () => {
     expect(isMonth("2026-13")).toBe(false);
     expect(formatMonthLabel("2026-10")).toBe("outubro de 2026");
     expect(() => addMonths("outubro", 1)).toThrow(RangeError);
+  });
+});
+
+describe("monthsBetween", () => {
+  it("conta meses entre dois meses", () => {
+    expect(monthsBetween("2026-10", "2027-12")).toBe(14);
+    expect(monthsBetween("2026-10", "2026-10")).toBe(0);
+    expect(monthsBetween("2026-10", "2026-07")).toBe(-3);
+    expect(monthsBetween("2026-12", "2027-01")).toBe(1);
   });
 });

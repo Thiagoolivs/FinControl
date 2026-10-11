@@ -14,10 +14,19 @@ function activeHref(pathname: string): string {
   return ITEMS.find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)))?.href ?? "";
 }
 
-export function AppTabBar() {
-  return <TabBar items={ITEMS} activeHref={activeHref(usePathname())} />;
+/** Badge da aba Transações = tamanho da fila de revisão. */
+function withBadges(reviewCount: number): NavItem[] {
+  return ITEMS.map((item) =>
+    item.href === "/transacoes" && reviewCount > 0
+      ? { ...item, badge: reviewCount, badgeLabel: `${reviewCount} para revisar` }
+      : item,
+  );
 }
 
-export function AppSideNav() {
-  return <SideNav items={ITEMS} activeHref={activeHref(usePathname())} />;
+export function AppTabBar({ reviewCount }: { reviewCount: number }) {
+  return <TabBar items={withBadges(reviewCount)} activeHref={activeHref(usePathname())} />;
+}
+
+export function AppSideNav({ reviewCount }: { reviewCount: number }) {
+  return <SideNav items={withBadges(reviewCount)} activeHref={activeHref(usePathname())} />;
 }

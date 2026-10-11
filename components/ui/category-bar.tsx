@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { type CategorySpend, foldCategories } from "@/lib/finance/categories";
-import { formatCents } from "@/lib/finance/money";
 import { formatBps } from "@/lib/finance/share";
 import { cn } from "./cn";
 import { EmptyState, ErrorState } from "./empty-state";
@@ -41,7 +40,9 @@ export function CategoryBar({
       <div className="flex flex-col gap-1.5">
         <Eyebrow as="h2">{title}</Eyebrow>
         {status === "ready" ? (
-          <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">{formatCents(totalCents)}</p>
+          <p className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
+            <Money cents={totalCents} />
+          </p>
         ) : null}
       </div>
 

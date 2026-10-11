@@ -1,9 +1,12 @@
 import { logoutAction } from "@/app/login/actions";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { Button } from "@/components/ui/button";
+import { RowLink } from "@/components/ui/row-link";
 import { Eyebrow, ScopeTag } from "@/components/ui/text";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, localDateOf } from "@/lib/dates";
+import { isGeminiConfigured } from "@/lib/ai/gemini";
+import { db } from "@/lib/db";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { getConnections, getCronHealth } from "@/lib/queries/overview";
 import { connectionAlertRules } from "@/lib/sync/alerts";
@@ -20,10 +23,11 @@ function formatLocalDate(instant: Date): string {
 
 export default async function ConfigPage() {
   const user = await requireUser();
-  const [connections, rules, cron] = await Promise.all([
+  const [connections, rules, cron, ruleCount] = await Promise.all([
     getConnections(user.id),
     connectionAlertRules(user.id),
     getCronHealth(user.id),
+    db().rule.count({ where: { userId: user.id } }),
   ]);
   const configured = isPluggyConfigured();
 
@@ -106,6 +110,37 @@ export default async function ConfigPage() {
             <ConnectPanel />
           </div>
         ) : null}
+      </section>
+
+      <section aria-labelledby="categorizacao" className="flex flex-col gap-2">
+        <h2 id="categorizacao" className="m-0 text-[28px] font-light leading-8 tracking-[-0.02em]">
+          Categorização
+        </h2>
+        <ul className="m-0 flex list-none flex-col p-0">
+          <li>
+            <RowLink href="/config/regras">
+              <span className="flex flex-1 flex-col gap-[3px]">
+                <span className="text-[16px]">Regras</span>
+                <span className="text-[13px] text-text-secondary">
+                  {ruleCount} {ruleCount === 1 ? "regra" : "regras"} · a primeira que casa decide a categoria
+                </span>
+              </span>
+            </RowLink>
+          </li>
+          <li>
+            <RowLink href="/config/categorias">
+              <span className="flex flex-1 flex-col gap-[3px]">
+                <span className="text-[16px]">Categorias</span>
+                <span className="text-[13px] text-text-secondary">Renomear, criar e apagar</span>
+              </span>
+            </RowLink>
+          </li>
+        </ul>
+        <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
+          {isGeminiConfigured()
+            ? "Sugestões da IA ligadas: as descrições das saídas sem categoria vão para o Gemini (Google), sem valores nem contas."
+            : "Sugestões da IA desligadas. Para ligar, defina GEMINI_API_KEY nas variáveis do Railway."}
+        </p>
       </section>
 
       <section aria-labelledby="conta" className="flex flex-col gap-3">

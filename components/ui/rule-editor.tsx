@@ -26,6 +26,8 @@ type RuleEditorProps = {
   /** Descrição real que originou a regra: preenche o campo de teste. */
   sampleDescription?: string;
   submitError?: string;
+  /** Some ao editar: editar uma regra sempre refaz o que ela categoriza. */
+  showRetroactive?: boolean;
   onSubmit?: (draft: RuleDraft) => Promise<void> | void;
   onCancel?: () => void;
 };
@@ -48,7 +50,17 @@ const SCOPE_OPTIONS: readonly SegmentOption<RuleDraft["scope"]>[] = [
   { value: "PJ", label: "PJ", tone: "pj" },
 ];
 
-export function RuleEditor({ categories, streams, buckets, initialValue, sampleDescription = "", submitError, onSubmit, onCancel }: RuleEditorProps) {
+export function RuleEditor({
+  categories,
+  streams,
+  buckets,
+  initialValue,
+  sampleDescription = "",
+  submitError,
+  showRetroactive = true,
+  onSubmit,
+  onCancel,
+}: RuleEditorProps) {
   const [draft, setDraft] = useState<RuleDraft>({ ...EMPTY_RULE_DRAFT, ...initialValue });
   const [errors, setErrors] = useState<RuleDraftErrors>({});
   const [sample, setSample] = useState(sampleDescription);
@@ -101,10 +113,10 @@ export function RuleEditor({ categories, streams, buckets, initialValue, sampleD
 
       <div className="flex flex-col gap-4">
         <SelectField id={ids.category} label="Categoria" value={draft.categoryId} options={categories} onChange={(value) => update("categoryId", value)} />
-        {draft.direction !== "SAIDA" ? (
+        {draft.direction !== "SAIDA" && streams.length > 0 ? (
           <SelectField id={ids.stream} label="Stream de receita" value={draft.revenueStreamId} options={streams} onChange={(value) => update("revenueStreamId", value)} />
         ) : null}
-        {draft.direction !== "ENTRADA" ? (
+        {draft.direction !== "ENTRADA" && buckets.length > 0 ? (
           <SelectField id={ids.bucket} label="Sai do bucket" value={draft.bucketId} options={buckets} onChange={(value) => update("bucketId", value)} />
         ) : null}
         {errors.destination ? <FieldError>{errors.destination}</FieldError> : null}
@@ -121,30 +133,32 @@ export function RuleEditor({ categories, streams, buckets, initialValue, sampleD
         />
       </Field>
 
-      <label htmlFor={ids.retro} className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
-        <span className="flex flex-col gap-0.5">
-          <span className="text-[15px]">Aplicar às transações que já existem</span>
-          <span className="text-[13px] text-text-secondary">Recategoriza o histórico que bate com o padrão.</span>
-        </span>
-        <span className="relative shrink-0">
-          <input
-            id={ids.retro}
-            type="checkbox"
-            role="switch"
-            checked={draft.applyRetroactively}
-            onChange={(event) => update("applyRetroactively", event.target.checked)}
-            className="peer sr-only"
-          />
-          <span
-            aria-hidden="true"
-            className="block h-[31px] w-[51px] rounded-full bg-text-primary/20 transition-colors duration-200 ease-apple peer-checked:bg-positive peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
-          />
-          <span
-            aria-hidden="true"
-            className="absolute left-0.5 top-0.5 size-[27px] rounded-full bg-white shadow transition-transform duration-200 ease-apple peer-checked:translate-x-5"
-          />
-        </span>
-      </label>
+      {showRetroactive ? (
+        <label htmlFor={ids.retro} className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[15px]">Aplicar às transações que já existem</span>
+            <span className="text-[13px] text-text-secondary">Refaz o que outras regras já categorizaram. O que você escolheu à mão fica.</span>
+          </span>
+          <span className="relative shrink-0">
+            <input
+              id={ids.retro}
+              type="checkbox"
+              role="switch"
+              checked={draft.applyRetroactively}
+              onChange={(event) => update("applyRetroactively", event.target.checked)}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden="true"
+              className="block h-[31px] w-[51px] rounded-full bg-text-primary/20 transition-colors duration-200 ease-apple peer-checked:bg-positive peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute left-0.5 top-0.5 size-[27px] rounded-full bg-white shadow transition-transform duration-200 ease-apple peer-checked:translate-x-5"
+            />
+          </span>
+        </label>
+      ) : null}
 
       {submitError ? <FieldError>{submitError}</FieldError> : null}
 

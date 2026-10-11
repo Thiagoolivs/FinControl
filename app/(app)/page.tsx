@@ -1,24 +1,27 @@
 import Link from "next/link";
 import { AlertBanner } from "@/components/ui/alert-banner";
 import { BalanceComposition, BalanceHero } from "@/components/ui/balance-hero";
+import { CategoryBar } from "@/components/ui/category-bar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
 import { RowLink } from "@/components/ui/row-link";
 import { StatRow } from "@/components/ui/stat-row";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
 import { Eyebrow, ScopeTag } from "@/components/ui/text";
-import { TransactionList, type TransactionItemData } from "@/components/ui/transaction-item";
+import { TransactionList } from "@/components/ui/transaction-item";
 import { requireUser } from "@/lib/auth/dal";
-import { formatDayLabel, formatElapsed, formatMoment, fromDbDate, todayLocal } from "@/lib/dates";
+import { formatElapsed, formatMoment, todayLocal } from "@/lib/dates";
 import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
 import { summarizeFlows } from "@/lib/finance/flows";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
-import { connectionAlertRules } from "@/lib/sync/alerts";
+import { getMonthSpendByCategory } from "@/lib/queries/transactions";
+import { categoryOverThresholdBps, connectionAlertRules } from "@/lib/sync/alerts";
 import { manualRefreshAvailableAt } from "@/lib/sync/sync";
 import { connectionIssues } from "./connection-health";
 import { PAGE_CLASS, PageHeader } from "./page-header";
+import { groupByDay, isTransferRow, toTransactionItem } from "./transaction-groups";
 import { RefreshButton } from "./refresh-button";
 import { ScopeFilter } from "./scope-filter";
 
@@ -31,13 +34,16 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const query = parseScopeParam((await searchParams).escopo);
   const scopeValue: ScopeValue = query.consolidated ? "TUDO" : query.scope;
 
-  const [connections, accounts, buckets, transactions, refreshAt, rules] = await Promise.all([
+  const month = todayLocal().slice(0, 7);
+  const [connections, accounts, buckets, transactions, refreshAt, rules, spend, overBps] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
     getBucketTotals(user.id, query),
     getRecentTransactions(user.id, query, RECENT_DAYS),
     manualRefreshAvailableAt(user.id),
     connectionAlertRules(user.id),
+    getMonthSpendByCategory(user.id, query, month),
+    categoryOverThresholdBps(user.id),
   ]);
 
   const balance = summarizeBalances(accounts);
@@ -50,25 +56,10 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     null,
   );
 
-  const isTransfer = (row: (typeof transactions)[number]) => row.transferPeerId !== null || row.category?.kind === "TRANSFERENCIA";
-  const flows = summarizeFlows(transactions.map((row) => ({ amountCents: row.amountCents, isTransfer: isTransfer(row) })));
-  const today = todayLocal();
-  const groups = new Map<string, TransactionItemData[]>();
-  for (const row of transactions) {
-    const label = formatDayLabel(fromDbDate(row.date), today);
-    const items = groups.get(label) ?? [];
-    items.push({
-      id: row.id,
-      description: row.descriptionClean,
-      meta: isTransfer(row) ? `${row.account.name} · transferência entre contas` : row.account.name,
-      amountCents: row.amountCents,
-      kind: isTransfer(row) ? "transfer" : row.amountCents > 0 ? "in" : "out",
-      scope: row.scope,
-      pending: row.status === "PENDING",
-      installment: row.installmentTotal && row.installmentCurrent ? `${row.installmentCurrent}/${row.installmentTotal}` : undefined,
-    });
-    groups.set(label, items);
-  }
+  const flows = summarizeFlows(transactions.map((row) => ({ amountCents: row.amountCents, isTransfer: isTransferRow(row) })));
+  const groups = groupByDay(transactions, todayLocal(), (row) =>
+    toTransactionItem(row, isTransferRow(row) ? `${row.account.name} · transferência entre contas` : row.account.name, `/transacoes/${row.id}`),
+  );
 
   const connectLink = (
     <Link href="/config" className="inline-flex min-h-11 items-center text-[15px] text-accent">
@@ -156,6 +147,10 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         </section>
       ) : null}
 
+      {connections.length > 0 && spend.length > 0 ? (
+        <CategoryBar title="Gastos do mês" items={spend} overThresholdBps={overBps ?? Number.POSITIVE_INFINITY} />
+      ) : null}
+
       {connections.length > 0 ? (
         <section aria-labelledby="recentes" className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
@@ -176,7 +171,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           {transactions.length === 0 ? (
             <EmptyState compact title="Nenhuma transação no período." />
           ) : (
-            <TransactionList groups={[...groups].map(([label, items]) => ({ label, items }))} />
+            <TransactionList groups={groups} />
           )}
         </section>
       ) : null}

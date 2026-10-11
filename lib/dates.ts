@@ -85,3 +85,30 @@ export function formatMoment(instant: Date, now: Date = new Date()): string {
   if (diff === 1) return `amanhã às ${time}`;
   return `${dayMonth.format(toDbDate(localDateOf(instant)))} às ${time}`;
 }
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+const monthName = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+
+/** "2026-10" é um mês válido? */
+export function isMonth(value: string): boolean {
+  return MONTH.test(value);
+}
+
+/** "2026-10" + (−3) → "2026-07". */
+export function addMonths(month: string, count: number): string {
+  if (!isMonth(month)) throw new RangeError(`Mês inválido: ${month}`);
+  const value = new Date(`${month}-01T00:00:00Z`);
+  value.setUTCMonth(value.getUTCMonth() + count);
+  return value.toISOString().slice(0, 7);
+}
+
+/** Primeiro e último dia do mês, como datas de calendário. */
+export function monthRange(month: string): { from: string; to: string } {
+  return { from: `${month}-01`, to: addDays(`${addMonths(month, 1)}-01`, -1) };
+}
+
+/** "outubro de 2026". */
+export function formatMonthLabel(month: string): string {
+  if (!isMonth(month)) throw new RangeError(`Mês inválido: ${month}`);
+  return monthName.format(new Date(`${month}-01T00:00:00Z`));
+}

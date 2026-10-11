@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/dal";
 import { GeminiError, isGeminiConfigured } from "@/lib/ai/gemini";
+import { db } from "@/lib/db";
 import { describeRuleError } from "@/lib/rules/action-error";
 import { acceptAllSuggestions, categorizeGroup, ignoreSuggestion, setTransactionCategory, setTransactionIgnored } from "@/lib/rules/mutations";
 import { suggestWithAi } from "@/lib/rules/suggest";
-import { assignStreamToGroup, setTransactionBucket, setTransactionStream } from "@/lib/streams/mutations";
+import { assignStreamToGroup, createStream, setTransactionBucket, setTransactionStream } from "@/lib/streams/mutations";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 import type { ActionState } from "../actions";
 
@@ -106,13 +107,24 @@ export async function setIgnoredAction(input: { transactionId: string; ignored: 
   }
 }
 
-const streamGroupInput = z.object({
-  transactionIds: z.array(z.string().min(1)).min(1).max(500),
-  revenueStreamId: z.string().min(1, "Escolha a stream de receita."),
-  createRule: z.boolean(),
-  pattern: z.string().max(200),
-  matchType: z.enum(["PREFIX", "CONTAINS", "REGEX"]),
-});
+const streamGroupInput = z
+  .object({
+    transactionIds: z.array(z.string().min(1)).min(1).max(500),
+    revenueStreamId: z.string().min(1).nullable(),
+    // Fonte nova criada ali mesmo, na fila, em vez de ir até Config → Receitas.
+    newStream: z
+      .object({
+        name: z.string().trim().min(1, "Dê um nome à fonte de receita.").max(60),
+        type: z.enum(["SALARIO_FIXO", "PROJETO", "VENTURE", "OUTRO"]),
+        scope: z.enum(["PF", "PJ"]),
+      })
+      .nullable()
+      .default(null),
+    createRule: z.boolean(),
+    pattern: z.string().max(200),
+    matchType: z.enum(["PREFIX", "CONTAINS", "REGEX"]),
+  })
+  .refine((input) => input.revenueStreamId !== null || input.newStream !== null, "Escolha a stream de receita.");
 
 export async function assignStreamGroupAction(input: z.input<typeof streamGroupInput>): Promise<ActionState> {
   const user = await requireUser();
@@ -120,9 +132,10 @@ export async function assignStreamGroupAction(input: z.input<typeof streamGroupI
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const data = parsed.data;
   try {
+    const revenueStreamId = data.revenueStreamId ?? (data.newStream ? await createStream(user.id, data.newStream) : "");
     await assignStreamToGroup(user.id, {
       transactionIds: data.transactionIds,
-      revenueStreamId: data.revenueStreamId,
+      revenueStreamId,
       rule: data.createRule ? { pattern: data.pattern, matchType: data.matchType } : null,
     });
     revalidatePath("/", "layout");
@@ -152,4 +165,16 @@ export async function setBucketAction(input: { transactionId: string; bucketId: 
   } catch (error) {
     return { error: describeRuleError(error) };
   }
+}
+
+const reviewWindowInput = z.union([z.literal(30), z.literal(60), z.literal(90), z.null()]);
+
+/** Janela da fila de revisão (30, 60 ou 90 dias; null = todo o histórico). */
+export async function setReviewWindowAction(days: z.input<typeof reviewWindowInput>): Promise<ActionState> {
+  const user = await requireUser();
+  const parsed = reviewWindowInput.safeParse(days);
+  if (!parsed.success) return { error: "Janela inválida." };
+  await db().user.update({ where: { id: user.id }, data: { reviewWindowDays: parsed.data } });
+  revalidatePath("/", "layout");
+  return { notice: parsed.data === null ? "A fila mostra todo o histórico." : `A fila mostra os últimos ${parsed.data} dias.` };
 }

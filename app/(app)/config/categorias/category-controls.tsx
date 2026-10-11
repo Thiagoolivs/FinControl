@@ -115,6 +115,7 @@ const KINDS = [
   { value: "VARIAVEL", label: "Variável" },
   { value: "ESSENCIAL", label: "Essencial" },
   { value: "INVESTIMENTO", label: "Investimento" },
+  { value: "RECEITA", label: "Entrada" },
 ] as const;
 
 const ICONS: { value: IconName; label: string }[] = [

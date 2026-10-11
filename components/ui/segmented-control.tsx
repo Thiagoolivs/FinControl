@@ -12,6 +12,8 @@ type SegmentedControlProps<T extends string> = {
   onChange: (value: T) => void;
   /** tabs = texto com ponto (cabeçalhos, direção B); boxed = trilho com pílula (formulários). */
   variant?: "tabs" | "boxed";
+  /** boxed dentro de um card (bg-surface): o trilho sobe um nível para aparecer. */
+  onSurface?: boolean;
   className?: string;
 };
 
@@ -23,6 +25,7 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   variant = "tabs",
+  onSurface = false,
   className,
 }: SegmentedControlProps<T>) {
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
@@ -43,7 +46,7 @@ export function SegmentedControl<T extends string>({
       role="radiogroup"
       aria-label={label}
       className={cn(
-        variant === "tabs" ? "flex gap-6" : "flex h-11 gap-0.5 rounded-full bg-surface p-[3px]",
+        variant === "tabs" ? "flex gap-6" : cn("flex h-11 gap-0.5 rounded-full p-[3px]", onSurface ? "bg-surface-elevated" : "bg-surface"),
         className,
       )}
     >
@@ -69,7 +72,7 @@ export function SegmentedControl<T extends string>({
                     selected ? cn("font-semibold", pj ? "text-scope-pj" : "text-text-primary") : "text-text-secondary",
                   )
                 : cn(
-                    "min-w-0 flex-1 truncate rounded-full px-2 text-[15px] transition-colors duration-200 ease-apple",
+                    "min-w-0 flex-1 truncate rounded-full px-1 text-[15px] transition-colors duration-200 ease-apple",
                     selected
                       ? cn("font-semibold", pj ? "bg-scope-pj text-bg" : "bg-text-primary/12 text-text-primary")
                       : "text-text-secondary",

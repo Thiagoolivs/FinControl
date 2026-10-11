@@ -4,16 +4,19 @@ import { Icon } from "@/components/ui/icon";
 import { Eyebrow } from "@/components/ui/text";
 import { isGeminiConfigured } from "@/lib/ai/gemini";
 import { requireUser } from "@/lib/auth/dal";
+import { toDbDate } from "@/lib/dates";
 import { categoryOptions, ensureDefaultCategories, getCategoryTree } from "@/lib/rules/categories";
-import { getIncomeQueue, getReviewQueue } from "@/lib/rules/queue";
+import { countOutsideWindow, getIncomeQueue, getReviewQueue, getReviewWindow } from "@/lib/rules/queue";
 import { destinationOptions, prepareStreams } from "@/lib/streams/queries";
 import { PAGE_CLASS } from "../../page-header";
 import { AcceptAllButton } from "./accept-all";
 import { QueueGroupCard } from "./group-card";
 import { IncomeGroupCard } from "./income-card";
 import { SuggestButton } from "./suggest-button";
+import { ReviewWindowControl } from "./window-control";
 
 const VISIBLE_GROUPS = 30;
+const dayMonth = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", timeZone: "UTC" });
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 const transactionsIn = (groups: { transactions: unknown[] }[]) => groups.reduce((sum, group) => sum + group.transactions.length, 0);
@@ -22,20 +25,34 @@ export default async function ReviewPage({ searchParams }: PageProps<"/transacoe
   const user = await requireUser();
   await ensureDefaultCategories(user.id);
   await prepareStreams(user.id);
-  const [queue, income, tree, destinations, params] = await Promise.all([
+  const [queue, income, tree, destinations, reviewWindow, outside, params] = await Promise.all([
     getReviewQueue(user.id),
     getIncomeQueue(user.id),
     getCategoryTree(user.id),
     destinationOptions(user.id),
+    getReviewWindow(user.id),
+    countOutsideWindow(user.id),
     searchParams,
   ]);
   const total = transactionsIn(queue);
   const incomeTotal = transactionsIn(income);
-  const options = categoryOptions(tree);
+  const options = categoryOptions(tree, "gasto");
   const ai = isGeminiConfigured();
   // Sem saídas para revisar, a fila abre direto nas entradas.
   const kind = incomeTotal > 0 && (params.tipo === "entradas" || total === 0) ? "entradas" : "saidas";
   const kindTabs = incomeTotal > 0 && total > 0 ? <KindTabs current={kind} outflows={total} inflows={incomeTotal} /> : null;
+  const left = kind === "entradas" ? outside.inflows : outside.outflows;
+  const windowSection = (
+    <section aria-label="Período da fila" className="flex flex-col gap-1">
+      <ReviewWindowControl days={reviewWindow.days} />
+      {left > 0 && reviewWindow.from ? (
+        <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
+          {plural(left, "transação de antes de", "transações de antes de")} {dayMonth.format(toDbDate(reviewWindow.from))} {left === 1 ? "ficou" : "ficaram"} de fora. Só o
+          recente pede atenção; para revisar o resto, escolha um período maior.
+        </p>
+      ) : null}
+    </section>
+  );
 
   if (kind === "entradas") {
     return (
@@ -45,14 +62,21 @@ export default async function ReviewPage({ searchParams }: PageProps<"/transacoe
           <Eyebrow as="p">Fila de revisão</Eyebrow>
           <h1 className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">{plural(incomeTotal, "entrada", "entradas")} sem fonte</h1>
           <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
-            Diga de que stream veio cada grupo: as reservas de imposto e custo saem na hora e, se for do negócio, o resto vai
-            para o caixa dele. Estorno, reembolso ou resgate não é receita: escolha uma categoria.
+            Diga de onde veio cada grupo. Renda (salário, freela, negócio) separa imposto e custo na hora. Reembolso, rendimento,
+            presente ou venda é outra entrada. Devolução de compra é estorno: abate o gasto da área.
           </p>
         </header>
+        {windowSection}
         {kindTabs}
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {income.slice(0, VISIBLE_GROUPS).map((group) => (
-            <IncomeGroupCard key={group.key} group={group} streams={destinations.streams} categories={options} />
+            <IncomeGroupCard
+              key={group.key}
+              group={group}
+              streams={destinations.streams}
+              incomeCategories={categoryOptions(tree, "entrada")}
+              expenseCategories={options}
+            />
           ))}
         </ul>
         {income.length > VISIBLE_GROUPS ? (
@@ -89,6 +113,7 @@ export default async function ReviewPage({ searchParams }: PageProps<"/transacoe
           </p>
         ) : null}
       </header>
+      {windowSection}
       {kindTabs}
 
       {total > 0 && ai ? (
@@ -135,7 +160,10 @@ export default async function ReviewPage({ searchParams }: PageProps<"/transacoe
       ) : null}
 
       {queue.length === 0 ? (
-        <EmptyState title="Nada para revisar." description="Saídas novas sem regra aparecem aqui depois de cada leitura dos bancos." />
+        <EmptyState
+          title={reviewWindow.days === null ? "Nada para revisar." : `Nada para revisar nos últimos ${reviewWindow.days} dias.`}
+          description="Saídas novas sem regra aparecem aqui depois de cada leitura dos bancos."
+        />
       ) : (
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {groups.slice(0, VISIBLE_GROUPS).map((group) => (

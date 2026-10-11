@@ -102,7 +102,7 @@ export function StreamRow({ stream }: { stream: StreamRowData }) {
   );
 }
 
-const NEW_TYPES = [
+export const NEW_TYPES = [
   { value: "PROJETO", label: "Projeto" },
   { value: "VENTURE", label: "Negócio" },
   { value: "SALARIO_FIXO", label: "Salário" },

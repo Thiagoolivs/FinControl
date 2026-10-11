@@ -11,7 +11,7 @@ import type { ActionState } from "../../actions";
 const createInput = z.object({
   name: z.string().trim().min(1, "Dê um nome à categoria.").max(60),
   parentId: z.string().nullable(),
-  kind: z.enum(["ESSENCIAL", "VARIAVEL", "INVESTIMENTO"]),
+  kind: z.enum(["ESSENCIAL", "VARIAVEL", "INVESTIMENTO", "RECEITA"]),
   icon: z.string().refine(isIconName, "Ícone inválido."),
 });
 

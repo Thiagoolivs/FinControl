@@ -109,7 +109,7 @@ export default async function TransactionPage({ params }: PageProps<"/transacoes
       {transaction.transferPeer || (inflow && transaction.revenueStreamId) ? null : (
         <section aria-label="Categoria" className="flex flex-col gap-2">
           <Eyebrow as="h2">Categoria</Eyebrow>
-          <CategorySelect transactionId={transaction.id} categoryId={transaction.categoryId} options={categoryOptions(tree)} />
+          <CategorySelect transactionId={transaction.id} categoryId={transaction.categoryId} options={categoryOptions(tree, inflow ? undefined : "gasto")} />
           <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
             {transaction.rule ? (
               <>

@@ -92,7 +92,7 @@ async function suggestBatch(userId: string): Promise<{ groups: number; transacti
   if (pending.length === 0) return { groups: 0, transactions: 0 };
   const groups = pending;
 
-  const options = categoryOptions(await getCategoryTree(userId));
+  const options = categoryOptions(await getCategoryTree(userId), "gasto");
   const validIds = new Set(options.map((option) => option.id));
   const prompt = JSON.stringify({
     categorias: options.map((option) => ({ id: option.id, nome: option.name })),

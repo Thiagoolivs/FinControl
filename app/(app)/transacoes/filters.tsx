@@ -75,7 +75,7 @@ export function TransactionFilters({
         <label className="relative flex min-w-0 flex-1">
           <span className="sr-only">Categoria</span>
           <select value={categoryId} onChange={(event) => update({ categoria: event.target.value || null })} className={selectClass}>
-            <option value="">Todas as categorias</option>
+            <option value="">Categorias</option>
             <option value="sem">Sem categoria</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>

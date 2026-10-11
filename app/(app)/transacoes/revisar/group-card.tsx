@@ -11,8 +11,9 @@ import type { QueueGroup } from "@/lib/rules/queue";
 import type { ActionState } from "../../actions";
 import { categorizeGroupAction, ignoreSuggestionAction } from "../actions";
 
+// Rótulos curtos: o cartão é estreito no celular.
 const MATCH_OPTIONS: readonly SegmentOption<MatchType>[] = [
-  { value: "PREFIX", label: "Começa com" },
+  { value: "PREFIX", label: "Começa" },
   { value: "CONTAINS", label: "Contém" },
   { value: "REGEX", label: "Regex" },
 ];
@@ -103,7 +104,11 @@ export function QueueGroupCard({ group, categories }: { group: QueueGroup; categ
           />
           <SegmentedControl variant="boxed" label="Tipo de comparação" options={MATCH_OPTIONS} value={matchType} onChange={setMatchType} />
           <p className={`m-0 text-[13px] ${compiled.ok && matched === count ? "text-text-secondary" : "text-warning"}`}>
-            {compiled.ok ? `O padrão pega ${matched} de ${count} destas. As outras entram mesmo assim, só desta vez.` : compiled.error}
+            {!compiled.ok
+              ? compiled.error
+              : matched === count
+                ? `O padrão pega ${count === 1 ? "esta" : `as ${count}`} e as próximas iguais.`
+                : `O padrão pega ${matched} de ${count} destas. As outras entram nesta categoria só desta vez.`}
           </p>
         </div>
       ) : null}

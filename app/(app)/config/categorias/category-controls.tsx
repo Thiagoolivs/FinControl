@@ -30,7 +30,7 @@ export function CategoryRow({
   locked: boolean;
   nested: boolean;
 }) {
-  const [mode, setMode] = useState<"view" | "rename" | "delete">("view");
+  const [mode, setMode] = useState<"view" | "actions" | "rename" | "delete">("view");
   const [value, setValue] = useState(name);
   const [state, setState] = useState<ActionState>({});
   const [pending, startTransition] = useTransition();
@@ -62,20 +62,27 @@ export function CategoryRow({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex min-h-11 items-center gap-2">
+      <button
+        type="button"
+        disabled={locked}
+        aria-expanded={mode !== "view"}
+        aria-label={`Editar ${name}`}
+        onClick={() => setMode(mode === "view" ? "actions" : "view")}
+        className="flex min-h-11 w-full items-center gap-2 text-left text-text-primary disabled:cursor-default"
+      >
         <span className={`min-w-0 flex-1 truncate ${text}`}>{name}</span>
         <span className="shrink-0 text-[13px] text-text-secondary">{usage.transactions}</span>
-        {!locked ? (
-          <>
-            <button type="button" aria-label={`Renomear ${name}`} onClick={() => setMode("rename")} className="flex min-h-11 items-center px-2 text-[13px] text-accent">
-              Renomear
-            </button>
-            <button type="button" aria-label={`Apagar ${name}`} onClick={() => setMode(mode === "delete" ? "view" : "delete")} className="flex size-11 items-center justify-center text-text-secondary">
-              <Icon name="x" size={16} />
-            </button>
-          </>
-        ) : null}
-      </div>
+      </button>
+      {mode === "actions" ? (
+        <div className="flex gap-4 pb-1">
+          <Button variant="link" onClick={() => setMode("rename")}>
+            Renomear
+          </Button>
+          <button type="button" onClick={() => setMode("delete")} className="min-h-11 px-1 text-[16px] font-medium text-negative">
+            Apagar
+          </button>
+        </div>
+      ) : null}
       {mode === "delete" ? (
         <div className="flex flex-col gap-2 rounded-button bg-surface-elevated px-4 py-3">
           <p className="m-0 text-[13px] leading-[18px] text-text-secondary">

@@ -76,8 +76,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
   const hasCash = accounts.some((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
-  const freshest = connections.reduce<Date | null>(
-    (latest, connection) => (connection.lastSyncAt && (!latest || connection.lastSyncAt > latest) ? connection.lastSyncAt : latest),
+  // A legenda mostra a conexão mais desatualizada: uma conexão em dia não esconde outra parada há dias.
+  const oldestRead = connections.reduce<Date | null>(
+    (oldest, connection) => (connection.lastSyncAt && (!oldest || connection.lastSyncAt < oldest) ? connection.lastSyncAt : oldest),
     null,
   );
 
@@ -152,7 +153,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         amountCents={composition.availableCents}
         scope={scopeValue}
         status={connections.length === 0 || !hasCash ? "empty" : "ready"}
-        caption={freshest ? `Dados do banco ${formatElapsed(freshest)}` : undefined}
+        caption={oldestRead ? `Dados do banco ${formatElapsed(oldestRead)}` : undefined}
         emptyTitle={connections.length === 0 ? "Nenhuma conta conectada." : `Nenhuma conta${scopeName ? ` ${scopeName}` : ""} com saldo.`}
         emptyDescription={
           connections.length === 0 ? "Conecte um banco pelo Open Finance para ver o saldo aqui." : "As contas aparecem depois da primeira leitura da Pluggy."

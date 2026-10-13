@@ -30,7 +30,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
   const cards = accounts.filter((account) => account.type === "CREDIT");
   const balance = summarizeBalances(accounts);
   const bankSaysCents = cash.filter((account) => account.includeInTotals && account.currency === "BRL").reduce((sum, account) => sum + account.balanceCents, 0);
-  const freshest = connections.reduce<Date | null>((latest, connection) => (connection.lastSyncAt && (!latest || connection.lastSyncAt > latest) ? connection.lastSyncAt : latest), null);
+  const oldestRead = connections.reduce<Date | null>((oldest, connection) => (connection.lastSyncAt && (!oldest || connection.lastSyncAt < oldest) ? connection.lastSyncAt : oldest), null);
 
   return (
     <main className={PAGE_CLASS}>
@@ -42,7 +42,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
         amountCents={balance.grossCents}
         scope={scopeValue}
         status={cash.length === 0 ? "empty" : "ready"}
-        caption={freshest ? `Lido do banco ${formatElapsed(freshest)}` : undefined}
+        caption={oldestRead ? `Lido do banco ${formatElapsed(oldestRead)}` : undefined}
         emptyTitle="Nenhuma conta corrente ou poupança."
         emptyDescription="Conecte um banco em Config para ver o saldo aqui."
         composition={
@@ -103,8 +103,9 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
         </Eyebrow>
         <ol className="m-0 flex list-none flex-col gap-4 p-0 text-[15px] leading-[22px]">
           <Reason title="O banco foi lido em outro momento">
-            O Open Finance entrega o saldo da hora em que o banco foi lido{freshest ? ` (${formatElapsed(freshest)})` : ""}. Toque em Atualizar no topo; o banco leva
-            alguns minutos para responder. Lançamentos de hoje podem só aparecer na leitura seguinte.
+            O app mostra o saldo da hora em que o Meu Pluggy leu o banco{oldestRead ? ` (o mais antigo, ${formatElapsed(oldestRead)})` : ""}. O Meu Pluggy
+            atualiza sozinho; para puxar agora, atualize o banco em meu.pluggy.ai e depois toque em Atualizar aqui. Lançamentos de hoje podem só aparecer na
+            leitura seguinte.
           </Reason>
           <Reason title="Caixinhas e aplicação automática">
             Já somamos acima quando o banco informa. Se o seu banco não manda esses valores pelo Open Finance, eles não aparecem aqui.

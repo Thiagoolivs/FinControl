@@ -28,7 +28,9 @@ function formatLocalDate(instant: Date): string {
   return longDate.format(new Date(`${localDateOf(instant)}T00:00:00Z`));
 }
 
-export default async function ConfigPage() {
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+export default async function ConfigPage({ searchParams }: PageProps<"/config">) {
   const user = await requireUser();
   const [connections, rules, cron, ruleCount, profile, duplicates] = await Promise.all([
     getConnections(user.id),
@@ -39,6 +41,9 @@ export default async function ConfigPage() {
     getDuplicateConnections(user.id),
   ]);
   const aboutMe = profile?.aboutMe ?? null;
+  const params = await searchParams;
+  const removed = typeof params.removida === "string" ? params.removida.slice(0, 80) : null;
+  const count = (value: string | string[] | undefined) => Math.max(0, Number.parseInt(typeof value === "string" ? value : "", 10) || 0);
   const configured = isPluggyConfigured();
 
   return (
@@ -52,7 +57,7 @@ export default async function ConfigPage() {
           </h2>
           <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
             No plano gratuito a Pluggy só libera o MeuPluggy: conecte seus bancos em meu.pluggy.ai e depois traga cada um
-            para cá. A leitura automática roda uma vez por dia.
+            para cá. O app lê o que o Meu Pluggy já trouxe do banco: no cron e no botão Atualizar.
           </p>
         </div>
 
@@ -62,6 +67,12 @@ export default async function ConfigPage() {
             title="Pluggy sem credenciais"
             body="Defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET nas variáveis do serviço no Railway e reinicie."
           />
+        ) : null}
+
+        {removed ? (
+          <p role="status" className="m-0 text-[15px] leading-[21px] text-text-secondary">
+            {removed} removido daqui, com {plural(count(params.contas), "conta", "contas")} e {plural(count(params.lancamentos), "lançamento", "lançamentos")}.
+          </p>
         ) : null}
 
         {configured && connections.length > 0 ? <CronReminder lastRunAt={cron.lastRunAt} running={cron.running} /> : null}

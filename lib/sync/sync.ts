@@ -19,14 +19,26 @@ import { ingestTransactions, upsertAccount, upsertBills } from "./ingest";
 import { syncInvestments } from "./investments";
 import { detectTransfers } from "./transfers";
 
-/** Cooldown do botão "Atualizar" (só gatilho MANUAL conta). */
+/** Cooldown do botão "Atualizar": só conta leitura MANUAL que trouxe dado novo do banco. */
 export const MANUAL_REFRESH_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 // Sync parado há mais que isso é considerado morto (processo reiniciou no meio).
 const STALE_RUN_MS = 15 * 60 * 1000;
 // Leituras seguintes cobrem esta janela: pendentes que viram lançamento e lançamentos que chegam atrasados.
 const INCREMENTAL_WINDOW_DAYS = 60;
 
-export type SyncStats = { contas: number; novas: number; atualizadas: number; removidas: number; faturas: number; investimentos?: number; avisos: string[] };
+export type SyncStats = {
+  contas: number;
+  novas: number;
+  atualizadas: number;
+  removidas: number;
+  faturas: number;
+  investimentos?: number;
+  avisos: string[];
+  /** A Pluggy leu o banco de novo desde a leitura anterior (item.lastUpdatedAt avançou). */
+  bancoNovo?: boolean;
+  /** Quando a Pluggy leu o banco pela última vez (ISO). */
+  bancoLidoEm?: string | null;
+};
 
 export type ConnectionOutcome =
   | { connectionId: string; institutionName: string; ok: true; stats: SyncStats }
@@ -47,6 +59,7 @@ type ConnectionRow = {
   pluggyItemId: string;
   institutionName: string;
   status: ConnectionStatus;
+  lastSyncAt: Date | null;
 };
 
 /** Estado do item na Pluggy (status, consentimento) aplicado à conexão. */
@@ -108,7 +121,17 @@ async function syncConnection(
     const item = await fetchItem(connection.pluggyItemId);
     await refreshConnectionState(connection, previousStatus, item);
 
-    const stats: SyncStats = { contas: 0, novas: 0, atualizadas: 0, removidas: 0, faturas: 0, avisos: [] };
+    const bankReadAt = item.lastUpdatedAt ? new Date(item.lastUpdatedAt) : null;
+    const stats: SyncStats = {
+      contas: 0,
+      novas: 0,
+      atualizadas: 0,
+      removidas: 0,
+      faturas: 0,
+      avisos: [],
+      bancoNovo: bankReadAt !== null && (connection.lastSyncAt === null || bankReadAt > connection.lastSyncAt),
+      bancoLidoEm: bankReadAt?.toISOString() ?? null,
+    };
     for (const wire of await fetchAccounts(connection.pluggyItemId)) {
       const account = await upsertAccount(connection, wire);
       if (!account) continue;
@@ -173,7 +196,7 @@ export async function syncUser(
 
   const connections = await db().connection.findMany({
     where: { userId, ...(options.connectionId ? { id: options.connectionId } : {}) },
-    select: { id: true, userId: true, scope: true, pluggyItemId: true, institutionName: true, status: true },
+    select: { id: true, userId: true, scope: true, pluggyItemId: true, institutionName: true, status: true, lastSyncAt: true },
     orderBy: { createdAt: "asc" },
   });
   const outcomes: ConnectionOutcome[] = [];
@@ -216,10 +239,13 @@ export async function syncUser(
   return { status: "done", outcomes, transferencias, categorizadas };
 }
 
-/** Quando o botão "Atualizar" volta a ficar disponível (null = já está). Leitura que falhou não conta. */
+/**
+ * Quando o botão "Atualizar" volta a ficar disponível (null = já está). Só trava depois de uma leitura que
+ * trouxe dado novo do banco: ler de novo o que a Pluggy já tinha não gasta nada e não deve bloquear.
+ */
 export async function manualRefreshAvailableAt(userId: string, now: Date = new Date()): Promise<Date | null> {
   const last = await db().syncRun.findFirst({
-    where: { userId, trigger: "MANUAL", status: "SUCESSO" },
+    where: { userId, trigger: "MANUAL", status: "SUCESSO", stats: { path: ["bancoNovo"], equals: true } },
     orderBy: { startedAt: "desc" },
     select: { startedAt: true },
   });

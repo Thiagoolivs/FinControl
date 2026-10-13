@@ -34,17 +34,17 @@ Gere as chaves uma vez com `npx web-push generate-vapid-keys` e defina nas Varia
 
 Os investimentos da Pluggy entram sozinhos no sync (se o MeuPluggy tiver). Para o preço de ação, FII e cripto, crie um token gratuito em brapi.dev e defina `BRAPI_TOKEN` nas Variables: o cron busca uma cotação por ativo, uma vez por dia. CDI, Selic e IPCA vêm do Banco Central sem token. Sem a brapi, essas posições ficam com o valor que o banco informa (ou o custo).
 
-### Sync diário (Railway Cron)
+### Sync automático (Railway Cron)
 
 1. No app, em Variables: `CRON_SECRET` = saída de `openssl rand -hex 32`.
 2. No mesmo projeto: **New → GitHub Repo** → este repositório de novo (vira o serviço do cron).
 3. Nesse serviço novo:
    - **Variables**: `APP_URL` = `https://${{<serviço do app>.RAILWAY_PUBLIC_DOMAIN}}` e `CRON_SECRET` = `${{<serviço do app>.CRON_SECRET}}`.
    - **Settings → Deploy → Custom Start Command**: `npm run cron -- sync`.
-   - **Settings → Cron Schedule**: `0 9 * * *` (UTC; 06:00 em Brasília).
+   - **Settings → Cron Schedule**: `0 */3 * * *` (a cada 3 horas). Ler da Pluggy não gasta cota e o Meu Pluggy atualiza os bancos no horário dele: lendo várias vezes por dia, o app pega a atualização no mesmo dia.
    - Sem domínio público.
 
-O serviço sobe no horário, chama `POST /api/cron/sync` e encerra. Falha aparece como execução com erro no Railway. O botão **Atualizar** na tela Hoje faz a mesma leitura, com intervalo mínimo de 6h.
+O serviço sobe no horário, chama `POST /api/cron/sync` e encerra. Falha aparece como execução com erro no Railway. O botão **Atualizar** na tela Hoje faz a mesma leitura; ele só trava por 6h depois de uma leitura que trouxe dado novo do banco. O app não manda o banco atualizar: para puxar na hora, atualize o banco em meu.pluggy.ai e toque em Atualizar.
 
 O build usa Railpack com Node 22 (campo `engines`). `npm start` aplica as migrations antes de subir o servidor. Se faltar variável obrigatória, o processo encerra no boot com a lista do que falta.
 

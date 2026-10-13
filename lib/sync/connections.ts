@@ -17,7 +17,7 @@ export async function getDuplicateConnections(userId: string): Promise<Map<strin
  * dos buckets). As outras conexões não mudam. O item continua na Pluggy: para parar de compartilhar o banco,
  * é lá (no Meu Pluggy) que se remove.
  */
-export async function removeConnection(userId: string, connectionId: string): Promise<{ accounts: number; transactions: number }> {
+export async function removeConnection(userId: string, connectionId: string): Promise<{ institutionName: string; accounts: number; transactions: number }> {
   const connection = await db().connection.findFirst({
     where: { id: connectionId, userId },
     select: { id: true, institutionName: true, scope: true, pluggyItemId: true },
@@ -42,5 +42,5 @@ export async function removeConnection(userId: string, connectionId: string): Pr
       origin: "USER",
     },
   });
-  return { accounts: accounts.count, transactions };
+  return { institutionName: connection.institutionName, accounts: accounts.count, transactions };
 }

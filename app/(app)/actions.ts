@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/dal";
-import { formatMoment } from "@/lib/dates";
+import { formatElapsed, formatMoment } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { createConnectToken, isPluggyConfigured, isPluggyId, PluggyApiError, PluggyNotConfiguredError } from "@/lib/pluggy/client";
 import { createRateLimiter } from "@/lib/security/rate-limit";
@@ -38,7 +39,19 @@ function summarize(result: UserSyncResult): ActionState {
     return { error: failed.map((outcome) => `${outcome.institutionName}: ${outcome.ok ? "" : outcome.error}`).join(" · ") };
   }
   const created = result.outcomes.reduce((sum, outcome) => sum + (outcome.ok ? outcome.stats.novas : 0), 0);
-  return { notice: created === 0 ? "Tudo em dia: nenhuma transação nova." : `${created} ${created === 1 ? "transação nova" : "transações novas"}.` };
+  if (created > 0) return { notice: `${created} ${created === 1 ? "transação nova" : "transações novas"}.` };
+  // Banco que a Pluggy não leu de novo não está "em dia": é o Meu Pluggy que ainda não atualizou. Diz qual e quando.
+  const stale = result.outcomes.flatMap((outcome) =>
+    outcome.ok && !outcome.stats.bancoNovo && outcome.stats.bancoLidoEm
+      ? [`${outcome.institutionName}, lido ${formatElapsed(new Date(outcome.stats.bancoLidoEm))}`]
+      : [],
+  );
+  if (stale.length > 0) {
+    return {
+      notice: `Nada novo. Sem leitura nova do banco: ${stale.join("; ")}. O Meu Pluggy atualiza sozinho; para puxar agora, atualize em meu.pluggy.ai e toque em Atualizar de novo.`,
+    };
+  }
+  return { notice: "Tudo em dia: nenhuma transação nova." };
 }
 
 /** Token para o widget Pluggy Connect. Com `connectionId`, abre o widget no modo de atualizar aquele item. */
@@ -84,17 +97,21 @@ export async function registerConnectionFormAction(_state: ActionState, formData
   return registerConnectionAction({ itemId: String(formData.get("itemId") ?? ""), scope: String(formData.get("scope") ?? "") });
 }
 
-/** Remove a conexão daqui com as contas e transações dela (ex.: o mesmo banco conectado duas vezes). */
+/**
+ * Remove a conexão daqui com as contas e transações dela (ex.: o mesmo banco conectado duas vezes). O cartão
+ * da conexão some da tela, então o resultado volta pela URL de Config.
+ */
 export async function removeConnectionAction(connectionId: string): Promise<ActionState> {
   const user = await requireUser();
   if (typeof connectionId !== "string" || !connectionId) return { error: "Conexão inválida." };
+  let removed: Awaited<ReturnType<typeof removeConnection>>;
   try {
-    const { accounts, transactions } = await removeConnection(user.id, connectionId);
-    revalidatePath("/", "layout");
-    return { notice: `Conexão removida, com ${accounts} ${accounts === 1 ? "conta" : "contas"} e ${transactions} ${transactions === 1 ? "lançamento" : "lançamentos"}.` };
+    removed = await removeConnection(user.id, connectionId);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Não foi possível remover a conexão." };
   }
+  revalidatePath("/", "layout");
+  redirect(`/config?${new URLSearchParams({ removida: removed.institutionName, contas: String(removed.accounts), lancamentos: String(removed.transactions) })}`);
 }
 
 const scopeInput = z.object({ connectionId: z.string().min(1), scope: z.enum(["PF", "PJ"]) });
@@ -113,7 +130,7 @@ export async function changeConnectionScopeAction(input: { connectionId: string;
   }
 }
 
-/** Botão "Atualizar": lê de novo tudo que a Pluggy tem. Cooldown de 6h entre leituras bem-sucedidas. */
+/** Botão "Atualizar": lê de novo tudo que a Pluggy tem. Cooldown de 6h só depois de uma leitura com dado novo do banco. */
 export async function refreshAction(): Promise<ActionState> {
   const user = await requireUser();
   if (!isPluggyConfigured()) return { error: NOT_CONFIGURED };

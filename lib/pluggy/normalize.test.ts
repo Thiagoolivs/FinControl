@@ -102,7 +102,8 @@ describe("toBankExtras", () => {
       toBankExtras(
         {
           closingBalance: 1200.5,
-          automaticallyInvestedBalance: 3800,
+          // Open Finance: saldo disponível já somado ao aplicado (1.200,50 + 3.800,00).
+          automaticallyInvestedBalance: 5000.5,
           overdraftContractedLimit: 2000,
           overdraftUsedLimit: 0,
           reservedBalances: [
@@ -111,6 +112,7 @@ describe("toBankExtras", () => {
           ],
         },
         "BRL",
+        120_050,
       ),
     ).toEqual({
       autoInvestedCents: 380_000,
@@ -126,7 +128,7 @@ describe("toBankExtras", () => {
   });
 
   it("sem bankData (cartão, banco que não informa), tudo zero ou nulo", () => {
-    expect(toBankExtras(null, "BRL")).toEqual({
+    expect(toBankExtras(null, "BRL", 10_000)).toEqual({
       autoInvestedCents: 0,
       savedCents: 0,
       savedBoxes: [],
@@ -140,8 +142,21 @@ describe("toBankExtras", () => {
     const extras = toBankExtras(
       { reservedBalances: [{ name: "Dólar", availableAmounts: [{ amount: 100, currencyCode: "USD" }] }, { name: "Vazia", availableAmounts: [] }] },
       "BRL",
+      0,
     );
     expect(extras.savedBoxes).toEqual([]);
     expect(extras.savedCents).toBe(0);
+  });
+
+  it("banco sem aplicação manda o próprio saldo como 'com aplicação automática': não dobra", () => {
+    expect(toBankExtras({ automaticallyInvestedBalance: 2790.36 }, "BRL", 279_036).autoInvestedCents).toBe(0);
+  });
+
+  it("valor menor que o saldo não é 'saldo + aplicado': nada a somar", () => {
+    expect(toBankExtras({ automaticallyInvestedBalance: 1 }, "BRL", 120_950).autoInvestedCents).toBe(0);
+  });
+
+  it("saldo negativo (cheque especial) com aplicação: soma só o aplicado", () => {
+    expect(toBankExtras({ automaticallyInvestedBalance: 900 }, "BRL", -10_000).autoInvestedCents).toBe(100_000);
   });
 });

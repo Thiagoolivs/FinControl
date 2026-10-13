@@ -27,13 +27,14 @@ export async function upsertAccount(
 ): Promise<LocalAccount | null> {
   const type = toAccountType(wire.type, wire.subtype);
   if (!type) return null;
-  const extras = toBankExtras(type === "CREDIT" ? null : wire.bankData, wire.currencyCode);
+  const balanceCents = decimalToCents(wire.balance);
+  const extras = toBankExtras(type === "CREDIT" ? null : wire.bankData, wire.currencyCode, balanceCents);
   const data = {
     connectionId: connection.id,
     type,
     name: wire.marketingName?.trim() || wire.name,
     number: wire.number ?? null,
-    balanceCents: decimalToCents(wire.balance),
+    balanceCents,
     currency: wire.currencyCode,
     creditLimitCents: nullableCents(wire.creditData?.creditLimit),
     availableCreditCents: nullableCents(wire.creditData?.availableCreditLimit),

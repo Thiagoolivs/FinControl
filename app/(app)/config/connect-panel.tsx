@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Eyebrow } from "@/components/ui/text";
-import { type ActionState, changeConnectionScopeAction, registerConnectionFormAction } from "../actions";
+import { type ActionState, changeConnectionScopeAction, registerConnectionFormAction, removeConnectionAction } from "../actions";
 import { usePluggyConnect } from "./use-pluggy-connect";
 
 const SCOPES = [
@@ -123,6 +123,50 @@ export function ScopeSwitch({ connectionId, scope }: { connectionId: string; sco
           }
         >
           Mudar para {target}
+        </Button>
+        <Button variant="link" onClick={() => setConfirming(false)} disabled={pending}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Remover a conexão daqui (com contas e transações). Pede confirmação: não dá para desfazer. */
+export function RemoveConnection({ connectionId, institutionName, accounts }: { connectionId: string; institutionName: string; accounts: number }) {
+  const [confirming, setConfirming] = useState(false);
+  const [state, setState] = useState<ActionState>({});
+  const [pending, startTransition] = useTransition();
+
+  if (!confirming) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button variant="link" className="self-start text-negative" onClick={() => setConfirming(true)}>
+          Remover conexão
+        </Button>
+        <Feedback state={state} />
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
+        Sai daqui {institutionName}, com {accounts === 1 ? "a conta" : `as ${accounts} contas`} e todas as transações desta conexão. Não dá para
+        desfazer; para trazer de volta, conecte de novo. No Meu Pluggy o banco continua conectado.
+      </p>
+      <div className="flex gap-3">
+        <Button
+          variant="secondary"
+          className="h-11 text-negative"
+          loading={pending}
+          onClick={() =>
+            startTransition(async () => {
+              setState(await removeConnectionAction(connectionId));
+              setConfirming(false);
+            })
+          }
+        >
+          Remover de vez
         </Button>
         <Button variant="link" onClick={() => setConfirming(false)} disabled={pending}>
           Cancelar

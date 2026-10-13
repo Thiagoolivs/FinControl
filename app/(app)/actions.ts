@@ -7,6 +7,7 @@ import { formatMoment } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { createConnectToken, isPluggyConfigured, isPluggyId, PluggyApiError, PluggyNotConfiguredError } from "@/lib/pluggy/client";
 import { createRateLimiter } from "@/lib/security/rate-limit";
+import { removeConnection } from "@/lib/sync/connections";
 import { changeConnectionScope } from "@/lib/sync/scope";
 import { ConnectionOwnershipError, manualRefreshAvailableAt, registerConnection, syncUser, type UserSyncResult } from "@/lib/sync/sync";
 
@@ -81,6 +82,19 @@ export async function registerConnectionAction(input: { itemId: string; scope: s
 
 export async function registerConnectionFormAction(_state: ActionState, formData: FormData): Promise<ActionState> {
   return registerConnectionAction({ itemId: String(formData.get("itemId") ?? ""), scope: String(formData.get("scope") ?? "") });
+}
+
+/** Remove a conexão daqui com as contas e transações dela (ex.: o mesmo banco conectado duas vezes). */
+export async function removeConnectionAction(connectionId: string): Promise<ActionState> {
+  const user = await requireUser();
+  if (typeof connectionId !== "string" || !connectionId) return { error: "Conexão inválida." };
+  try {
+    const { accounts, transactions } = await removeConnection(user.id, connectionId);
+    revalidatePath("/", "layout");
+    return { notice: `Conexão removida, com ${accounts} ${accounts === 1 ? "conta" : "contas"} e ${transactions} ${transactions === 1 ? "lançamento" : "lançamentos"}.` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Não foi possível remover a conexão." };
+  }
 }
 
 const scopeInput = z.object({ connectionId: z.string().min(1), scope: z.enum(["PF", "PJ"]) });

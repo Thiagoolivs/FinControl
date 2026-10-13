@@ -11,10 +11,11 @@ import { db } from "@/lib/db";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { vapidPublicKey } from "@/lib/push/send";
 import { getConnections, getCronHealth } from "@/lib/queries/overview";
+import { getDuplicateConnections } from "@/lib/sync/connections";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
-import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
+import { ConnectPanel, ReconnectButton, RemoveConnection, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
 import { AboutMeForm } from "./about-me";
 import { SavingsTargetForm } from "./savings-target";
@@ -29,12 +30,13 @@ function formatLocalDate(instant: Date): string {
 
 export default async function ConfigPage() {
   const user = await requireUser();
-  const [connections, rules, cron, ruleCount, profile] = await Promise.all([
+  const [connections, rules, cron, ruleCount, profile, duplicates] = await Promise.all([
     getConnections(user.id),
     connectionAlertRules(user.id),
     getCronHealth(user.id),
     db().rule.count({ where: { userId: user.id } }),
     db().user.findUnique({ where: { id: user.id }, select: { aboutMe: true, savingsTargetBps: true } }),
+    getDuplicateConnections(user.id),
   ]);
   const aboutMe = profile?.aboutMe ?? null;
   const configured = isPluggyConfigured();
@@ -69,6 +71,7 @@ export default async function ConfigPage() {
             {connections.map((connection) => {
               const issues = connectionIssues(connection, rules.consent?.daysBefore ?? null);
               const lastRun = connection.syncRuns[0];
+              const repeats = (duplicates.get(connection.id) ?? []).map((id) => connections.find((other) => other.id === id)).filter((other) => other !== undefined);
               const details = [
                 connection.scope === "PJ" ? "Empresa (PJ)" : "Pessoa física",
                 STATUS_LABEL[connection.status],
@@ -97,10 +100,17 @@ export default async function ConfigPage() {
                       {issue.title}. {issue.body}
                     </p>
                   ))}
+                  {repeats.length > 0 ? (
+                    <p className="m-0 text-[13px] leading-[18px] text-warning">
+                      Mesmas contas de {repeats.map((other) => `${other.institutionName}${other.lastSyncAt ? ` (banco lido ${formatElapsed(other.lastSyncAt)})` : ""}`).join(", ")}: o saldo e
+                      os gastos estão contando duas vezes. Remova a conexão repetida, de preferência a mais desatualizada.
+                    </p>
+                  ) : null}
                   {configured && issues.some((issue) => issue.reconnect) ? (
                     <ReconnectButton connectionId={connection.id} scope={connection.scope} />
                   ) : null}
                   <ScopeSwitch connectionId={connection.id} scope={connection.scope} />
+                  <RemoveConnection connectionId={connection.id} institutionName={connection.institutionName} accounts={connection._count.accounts} />
                 </li>
               );
             })}

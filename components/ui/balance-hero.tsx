@@ -108,14 +108,21 @@ function SegmentLink({ href, children }: { href?: string; children: ReactNode })
   );
 }
 
-/** Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. Legenda em duas colunas. */
+/**
+ * Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. O disponível já é o número
+ * grande: a legenda (duas colunas) mostra só o que sai dele, e o que é zero some. Sem nada separado, sobra
+ * só o atalho para as contas, sem repetir o mesmo valor.
+ */
 export function BalanceComposition({ segments, total }: BalanceCompositionProps) {
   const visible = segments.filter((segment) => segment.cents > 0);
   const visibleTotal = visible.reduce((sum, segment) => sum + segment.cents, 0);
+  const others = segments.filter((segment) => segment.key !== "disponivel" && segment.cents !== 0);
+  const available = segments.find((segment) => segment.key === "disponivel")?.cents ?? total.cents;
+  const sameAsAvailable = total.cents === available;
 
   return (
     <div className="mt-4 flex flex-col">
-      {visible.length > 0 ? (
+      {others.length > 0 && visible.length > 1 ? (
         <div aria-hidden="true" className="flex h-3 gap-0.5">
           {visible.map((segment) => (
             <div
@@ -126,23 +133,25 @@ export function BalanceComposition({ segments, total }: BalanceCompositionProps)
           ))}
         </div>
       ) : null}
-      <ul className="m-0 mt-4 grid list-none grid-cols-2 gap-x-6 gap-y-3 p-0">
-        {segments.map((segment) => (
-          <li key={segment.key} className="min-w-0">
-            <SegmentLink href={segment.href}>
-              <span className="flex items-center gap-2 text-[13px] text-text-secondary">
-                <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
-                <span className="truncate">{segment.label}</span>
-                {segment.key === "reservado" || segment.key === "negocio" ? <ScopeTag scope="PJ" /> : null}
-              </span>
-              <Money cents={segment.cents} className={cn("pl-4 text-[16px]", segment.cents < 0 && "text-negative")} />
-            </SegmentLink>
-          </li>
-        ))}
-      </ul>
-      <RowLink href={total.href} className="mt-3">
-        <span className="flex-1 text-[15px] text-text-secondary">{total.label}</span>
-        <Money cents={total.cents} className="text-[15px]" />
+      {others.length > 0 ? (
+        <ul className="m-0 mt-4 grid list-none grid-cols-2 gap-x-6 gap-y-3 p-0">
+          {others.map((segment) => (
+            <li key={segment.key} className="min-w-0">
+              <SegmentLink href={segment.href}>
+                <span className="flex items-center gap-2 text-[13px] text-text-secondary">
+                  <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
+                  <span className="truncate">{segment.label}</span>
+                  {segment.key === "reservado" || segment.key === "negocio" ? <ScopeTag scope="PJ" /> : null}
+                </span>
+                <Money cents={segment.cents} className={cn("pl-4 text-[16px]", segment.cents < 0 && "text-negative")} />
+              </SegmentLink>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <RowLink href={total.href} className={others.length > 0 ? "mt-3" : undefined}>
+        <span className="flex-1 text-[15px] text-text-secondary">{sameAsAvailable ? "Ver conta por conta" : total.label}</span>
+        {sameAsAvailable ? null : <Money cents={total.cents} className="text-[15px]" />}
       </RowLink>
     </div>
   );

@@ -11,10 +11,11 @@ import { db } from "@/lib/db";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { vapidPublicKey } from "@/lib/push/send";
 import { getConnections, getCronHealth } from "@/lib/queries/overview";
+import { getDuplicateConnections } from "@/lib/sync/connections";
 import { connectionAlertRules } from "@/lib/sync/alerts";
 import { connectionIssues, STATUS_LABEL } from "../connection-health";
 import { PAGE_CLASS, PageHeader } from "../page-header";
-import { ConnectPanel, ReconnectButton, ScopeSwitch } from "./connect-panel";
+import { ConnectPanel, ReconnectButton, RemoveConnection, ScopeSwitch } from "./connect-panel";
 import { CronReminder } from "./cron-reminder";
 import { AboutMeForm } from "./about-me";
 import { SavingsTargetForm } from "./savings-target";
@@ -27,16 +28,22 @@ function formatLocalDate(instant: Date): string {
   return longDate.format(new Date(`${localDateOf(instant)}T00:00:00Z`));
 }
 
-export default async function ConfigPage() {
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+export default async function ConfigPage({ searchParams }: PageProps<"/config">) {
   const user = await requireUser();
-  const [connections, rules, cron, ruleCount, profile] = await Promise.all([
+  const [connections, rules, cron, ruleCount, profile, duplicates] = await Promise.all([
     getConnections(user.id),
     connectionAlertRules(user.id),
     getCronHealth(user.id),
     db().rule.count({ where: { userId: user.id } }),
     db().user.findUnique({ where: { id: user.id }, select: { aboutMe: true, savingsTargetBps: true } }),
+    getDuplicateConnections(user.id),
   ]);
   const aboutMe = profile?.aboutMe ?? null;
+  const params = await searchParams;
+  const removed = typeof params.removida === "string" ? params.removida.slice(0, 80) : null;
+  const count = (value: string | string[] | undefined) => Math.max(0, Number.parseInt(typeof value === "string" ? value : "", 10) || 0);
   const configured = isPluggyConfigured();
 
   return (
@@ -50,7 +57,7 @@ export default async function ConfigPage() {
           </h2>
           <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
             No plano gratuito a Pluggy só libera o MeuPluggy: conecte seus bancos em meu.pluggy.ai e depois traga cada um
-            para cá. A leitura automática roda uma vez por dia.
+            para cá. O app lê o que o Meu Pluggy já trouxe do banco: no cron e no botão Atualizar.
           </p>
         </div>
 
@@ -62,6 +69,12 @@ export default async function ConfigPage() {
           />
         ) : null}
 
+        {removed ? (
+          <p role="status" className="m-0 text-[15px] leading-[21px] text-text-secondary">
+            {removed} removido daqui, com {plural(count(params.contas), "conta", "contas")} e {plural(count(params.lancamentos), "lançamento", "lançamentos")}.
+          </p>
+        ) : null}
+
         {configured && connections.length > 0 ? <CronReminder lastRunAt={cron.lastRunAt} running={cron.running} /> : null}
 
         {connections.length > 0 ? (
@@ -69,6 +82,7 @@ export default async function ConfigPage() {
             {connections.map((connection) => {
               const issues = connectionIssues(connection, rules.consent?.daysBefore ?? null);
               const lastRun = connection.syncRuns[0];
+              const repeats = (duplicates.get(connection.id) ?? []).map((id) => connections.find((other) => other.id === id)).filter((other) => other !== undefined);
               const details = [
                 connection.scope === "PJ" ? "Empresa (PJ)" : "Pessoa física",
                 STATUS_LABEL[connection.status],
@@ -97,10 +111,17 @@ export default async function ConfigPage() {
                       {issue.title}. {issue.body}
                     </p>
                   ))}
+                  {repeats.length > 0 ? (
+                    <p className="m-0 text-[13px] leading-[18px] text-warning">
+                      Mesmas contas de {repeats.map((other) => `${other.institutionName}${other.lastSyncAt ? ` (banco lido ${formatElapsed(other.lastSyncAt)})` : ""}`).join(", ")}: o saldo e
+                      os gastos estão contando duas vezes. Remova a conexão repetida, de preferência a mais desatualizada.
+                    </p>
+                  ) : null}
                   {configured && issues.some((issue) => issue.reconnect) ? (
                     <ReconnectButton connectionId={connection.id} scope={connection.scope} />
                   ) : null}
                   <ScopeSwitch connectionId={connection.id} scope={connection.scope} />
+                  <RemoveConnection connectionId={connection.id} institutionName={connection.institutionName} accounts={connection._count.accounts} />
                 </li>
               );
             })}

@@ -29,6 +29,7 @@ import { parseScopeParam } from "@/lib/queries/scope";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
 import { countReviewQueue } from "@/lib/rules/queue";
 import { categoryOverThresholdBps, connectionAlertRules } from "@/lib/sync/alerts";
+import { getDuplicateConnections } from "@/lib/sync/connections";
 import { manualRefreshAvailableAt } from "@/lib/sync/sync";
 import { AlertList } from "./alertas/alert-list";
 import { connectionIssues } from "./connection-health";
@@ -49,7 +50,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const today = todayLocal();
   const month = today.slice(0, 7);
 
-  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates] = await Promise.all([
+  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates, duplicates] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
     getBucketTotals(user.id, query),
@@ -63,6 +64,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     countReviewQueue(user.id),
     db().user.findUniqueOrThrow({ where: { id: user.id }, select: { savingsTargetBps: true } }),
     getHighlightCandidates(user.id, query, today),
+    getDuplicateConnections(user.id),
   ]);
   // Manchete do mês: o gasto de estilo de vida que mais cresceu além do limite "acima da média" do usuário.
   const highlight = pickHighlight(candidates, overBps === null ? null : overBps - 10_000);
@@ -74,8 +76,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
   const hasCash = accounts.some((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
-  const freshest = connections.reduce<Date | null>(
-    (latest, connection) => (connection.lastSyncAt && (!latest || connection.lastSyncAt > latest) ? connection.lastSyncAt : latest),
+  // A legenda mostra a conexão mais desatualizada: uma conexão em dia não esconde outra parada há dias.
+  const oldestRead = connections.reduce<Date | null>(
+    (oldest, connection) => (connection.lastSyncAt && (!oldest || connection.lastSyncAt < oldest) ? connection.lastSyncAt : oldest),
     null,
   );
 
@@ -130,6 +133,14 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       {!isPluggyConfigured() && connections.length > 0 ? (
         <AlertBanner severity="warning" title="Pluggy sem credenciais" body="Defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET no Railway para voltar a sincronizar." />
       ) : null}
+      {duplicates.size > 0 ? (
+        <AlertBanner
+          severity="warning"
+          title="Banco conectado duas vezes"
+          body="As mesmas contas vêm de duas conexões: o saldo e os gastos estão contando em dobro. Remova a repetida em Config."
+          href="/config"
+        />
+      ) : null}
       {issues.length > 0 ? (
         <div className="flex flex-col gap-3">
           {issues.map((issue) => (
@@ -142,7 +153,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         amountCents={composition.availableCents}
         scope={scopeValue}
         status={connections.length === 0 || !hasCash ? "empty" : "ready"}
-        caption={freshest ? `Dados do banco ${formatElapsed(freshest)}` : undefined}
+        caption={oldestRead ? `Dados do banco ${formatElapsed(oldestRead)}` : undefined}
         emptyTitle={connections.length === 0 ? "Nenhuma conta conectada." : `Nenhuma conta${scopeName ? ` ${scopeName}` : ""} com saldo.`}
         emptyDescription={
           connections.length === 0 ? "Conecte um banco pelo Open Finance para ver o saldo aqui." : "As contas aparecem depois da primeira leitura da Pluggy."

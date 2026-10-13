@@ -30,7 +30,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
   const cards = accounts.filter((account) => account.type === "CREDIT");
   const balance = summarizeBalances(accounts);
   const bankSaysCents = cash.filter((account) => account.includeInTotals && account.currency === "BRL").reduce((sum, account) => sum + account.balanceCents, 0);
-  const freshest = connections.reduce<Date | null>((latest, connection) => (connection.lastSyncAt && (!latest || connection.lastSyncAt > latest) ? connection.lastSyncAt : latest), null);
+  const oldestRead = connections.reduce<Date | null>((oldest, connection) => (connection.lastSyncAt && (!oldest || connection.lastSyncAt < oldest) ? connection.lastSyncAt : oldest), null);
 
   return (
     <main className={PAGE_CLASS}>
@@ -42,7 +42,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
         amountCents={balance.grossCents}
         scope={scopeValue}
         status={cash.length === 0 ? "empty" : "ready"}
-        caption={freshest ? `Lido do banco ${formatElapsed(freshest)}` : undefined}
+        caption={oldestRead ? `Lido do banco ${formatElapsed(oldestRead)}` : undefined}
         emptyTitle="Nenhuma conta corrente ou poupança."
         emptyDescription="Conecte um banco em Config para ver o saldo aqui."
         composition={
@@ -81,7 +81,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
           <ul className="m-0 flex list-none flex-col gap-8 p-0">
             {cards.map((account) => (
               <li key={account.id} className="flex flex-col gap-1">
-                <AccountTitle account={account} amountCents={account.balanceCents} />
+                <AccountTitle account={account} amountCents={null} />
                 <dl className="m-0 flex flex-col">
                   <Detail label="Limite usado" cents={account.balanceCents} />
                   {account.creditLimitCents !== null ? <Detail label="Limite total" cents={account.creditLimitCents} /> : null}
@@ -103,8 +103,9 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
         </Eyebrow>
         <ol className="m-0 flex list-none flex-col gap-4 p-0 text-[15px] leading-[22px]">
           <Reason title="O banco foi lido em outro momento">
-            O Open Finance entrega o saldo da hora em que o banco foi lido{freshest ? ` (${formatElapsed(freshest)})` : ""}. Toque em Atualizar no topo; o banco leva
-            alguns minutos para responder. Lançamentos de hoje podem só aparecer na leitura seguinte.
+            O app mostra o saldo da hora em que o Meu Pluggy leu o banco{oldestRead ? ` (o mais antigo, ${formatElapsed(oldestRead)})` : ""}. O Meu Pluggy
+            atualiza sozinho; para puxar agora, atualize o banco em meu.pluggy.ai e depois toque em Atualizar aqui. Lançamentos de hoje podem só aparecer na
+            leitura seguinte.
           </Reason>
           <Reason title="Caixinhas e aplicação automática">
             Já somamos acima quando o banco informa. Se o seu banco não manda esses valores pelo Open Finance, eles não aparecem aqui.
@@ -132,7 +133,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
   );
 }
 
-function AccountTitle({ account, amountCents }: { account: AccountRow; amountCents: number }) {
+function AccountTitle({ account, amountCents }: { account: AccountRow; amountCents: number | null }) {
   return (
     <div className="flex items-start gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
@@ -144,7 +145,9 @@ function AccountTitle({ account, amountCents }: { account: AccountRow; amountCen
           {[account.connection?.institutionName, ACCOUNT_KIND[account.type], account.number].filter(Boolean).join(" · ")}
         </span>
       </div>
-      <Money cents={amountCents} className={amountCents < 0 ? "text-[20px] font-light text-negative" : "text-[20px] font-light"} />
+      {amountCents === null ? null : (
+        <Money cents={amountCents} className={amountCents < 0 ? "text-[20px] font-light text-negative" : "text-[20px] font-light"} />
+      )}
     </div>
   );
 }
@@ -153,11 +156,14 @@ function CashAccount({ account }: { account: AccountRow }) {
   const boxes = savedBoxesOf(account.savedBoxes);
   const total = account.balanceCents + account.autoInvestedCents + account.savedCents;
   const showClosing = account.closingBalanceCents !== null && account.closingBalanceCents !== account.balanceCents;
+  // Sem aplicação, caixinha nem cheque especial, o total já é o saldo do banco: não repete o número.
+  const hasDetails = account.autoInvestedCents !== 0 || boxes.length > 0 || Boolean(account.overdraftLimitCents);
   return (
     <li id={account.id} className="flex flex-col gap-1">
       <AccountTitle account={account} amountCents={total} />
-      <dl className="m-0 mt-2 flex flex-col">
-        <Detail label="Saldo que o banco informa" cents={account.balanceCents} />
+      {hasDetails ? (
+        <dl className="m-0 mt-2 flex flex-col">
+          <Detail label="Saldo que o banco informa" cents={account.balanceCents} />
         {account.autoInvestedCents !== 0 ? <Detail label="Aplicação automática" cents={account.autoInvestedCents} /> : null}
         {boxes.map((box) => (
           <Detail key={box.name} label={box.name} cents={box.cents} hint="caixinha" />
@@ -168,7 +174,8 @@ function CashAccount({ account }: { account: AccountRow }) {
             <Detail label="Limite do cheque especial" cents={account.overdraftLimitCents} />
           </>
         ) : null}
-      </dl>
+        </dl>
+      ) : null}
       {showClosing && account.closingBalanceCents !== null ? (
         <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
           O banco também informa um saldo disponível de <Money cents={account.closingBalanceCents} />. Aqui usamos o saldo atual.

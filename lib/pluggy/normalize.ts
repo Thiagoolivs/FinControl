@@ -81,6 +81,7 @@ export function toQuantity(value: number | null | undefined): string {
 }
 
 export type BankExtras = {
+  /** Só a parte aplicada, além do saldo (nunca negativa). */
   autoInvestedCents: number;
   savedCents: number;
   /** Caixinhas (saldo reservado) com nome, para a tela de contas. Sem nome = "Saldo reservado" (ex.: bloqueio judicial). */
@@ -103,8 +104,12 @@ const optionalCents = (value: number | null | undefined): number | null => (valu
 /**
  * O que o `balance` da Pluggy não traz: aplicação automática e caixinhas (saldo reservado), mais cheque
  * especial e o "saldo disponível" do banco. Caixinha em outra moeda fica de fora (não há câmbio aqui).
+ *
+ * `automaticallyInvestedBalance` segue o Open Finance ("saldo disponível com aplicação automática"): é o
+ * saldo disponível JÁ SOMADO ao que está aplicado. A parte aplicada é a diferença para o `balance`; banco
+ * sem aplicação costuma mandar o próprio saldo ali, e somar os dois dobrava o saldo.
  */
-export function toBankExtras(bankData: WireBankData | null | undefined, currency: string): BankExtras {
+export function toBankExtras(bankData: WireBankData | null | undefined, currency: string, balanceCents: number): BankExtras {
   const savedBoxes = (bankData?.reservedBalances ?? [])
     .map((reserve) => ({
       name: reserve.name?.trim() || "Saldo reservado",
@@ -114,7 +119,7 @@ export function toBankExtras(bankData: WireBankData | null | undefined, currency
     }))
     .filter((box) => box.cents !== 0);
   return {
-    autoInvestedCents: optionalCents(bankData?.automaticallyInvestedBalance) ?? 0,
+    autoInvestedCents: Math.max(0, (optionalCents(bankData?.automaticallyInvestedBalance) ?? 0) - balanceCents),
     savedCents: savedBoxes.reduce((sum, box) => sum + box.cents, 0),
     savedBoxes,
     closingBalanceCents: optionalCents(bankData?.closingBalance),

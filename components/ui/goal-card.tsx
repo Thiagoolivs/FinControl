@@ -106,7 +106,7 @@ function GoalStatusLine({
     return <span className="text-[13px] text-accent">Defina o valor e a data</span>;
   }
   if (status === "paused") {
-    return <span className="text-[13px] text-text-secondary">Pausada · fora da projeção</span>;
+    return <span className="text-[13px] text-text-secondary">Pausada</span>;
   }
   if (status === "done") {
     return (

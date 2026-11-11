@@ -1,8 +1,9 @@
-import type { AccountType } from "@/generated/prisma/enums";
+import type { AccountType, Scope } from "@/generated/prisma/enums";
 import { assertCents } from "./money";
 
 export type BalanceAccount = {
   type: AccountType;
+  scope: Scope;
   balanceCents: number; // CREDIT: limite usado, positivo
   /** Aplicação automática: o banco tira do saldo e resgata sozinho quando precisa. */
   autoInvestedCents: number;
@@ -13,20 +14,25 @@ export type BalanceAccount = {
 };
 
 export type BalanceSummary = {
-  /** Tudo que está nas contas (corrente + poupança): saldo + aplicação automática + caixinhas. */
+  /** Tudo que está nas contas (corrente + poupança): pessoal + guardado + empresa. */
   grossCents: number;
-  /** Desse total, o que está em aplicação automática. Entra no disponível: o banco resgata sozinho. */
-  autoInvestedCents: number;
-  /** Desse total, o que está guardado em caixinhas. Não entra no disponível. */
+  /** Contas PF: saldo + aplicação automática, sem as caixinhas. */
+  personalCents: number;
+  /** Caixinhas de todas as contas. */
   savedCents: number;
+  /** Contas PJ: saldo + aplicação automática, sem as caixinhas. */
+  businessCents: number;
+  /** Desse total, o que está em aplicação automática. */
+  autoInvestedCents: number;
   /** Limite usado nos cartões. Não entra no saldo: é dívida a pagar, mostrada à parte. */
   creditUsedCents: number;
   /** Contas fora de BRL ficam de fora da soma (não há câmbio aqui). */
   foreignAccounts: number;
 };
 
+/** O dinheiro nas contas, dividido em pessoal (PF), guardado (caixinhas) e empresa (PJ). Cartão à parte. */
 export function summarizeBalances(accounts: readonly BalanceAccount[]): BalanceSummary {
-  const summary: BalanceSummary = { grossCents: 0, autoInvestedCents: 0, savedCents: 0, creditUsedCents: 0, foreignAccounts: 0 };
+  const summary: BalanceSummary = { grossCents: 0, personalCents: 0, savedCents: 0, businessCents: 0, autoInvestedCents: 0, creditUsedCents: 0, foreignAccounts: 0 };
   for (const account of accounts) {
     assertCents(account.balanceCents);
     assertCents(account.autoInvestedCents);
@@ -37,30 +43,13 @@ export function summarizeBalances(accounts: readonly BalanceAccount[]): BalanceS
       continue;
     }
     if (account.type === "CHECKING" || account.type === "SAVINGS") {
-      summary.grossCents += account.balanceCents + account.autoInvestedCents + account.savedCents;
-      summary.autoInvestedCents += account.autoInvestedCents;
+      const free = account.balanceCents + account.autoInvestedCents;
+      if (account.scope === "PJ") summary.businessCents += free;
+      else summary.personalCents += free;
       summary.savedCents += account.savedCents;
+      summary.autoInvestedCents += account.autoInvestedCents;
+      summary.grossCents += free + account.savedCents;
     } else if (account.type === "CREDIT") summary.creditUsedCents += account.balanceCents;
   }
   return summary;
-}
-
-export type BalanceComposition = {
-  grossCents: number; // saldo das contas
-  savedCents: number; // caixinhas
-  reservedCents: number; // reserva de imposto + reserva de custo
-  businessCashCents: number; // caixa do negócio
-  availableCents: number; // o que sobra: quanto dá para gastar
-};
-
-/**
- * Disponível = saldo das contas − caixinhas − reservas − caixa do negócio.
- * Pode ficar negativo se as reservas passarem do saldo.
- */
-export function composeBalance(input: { grossCents: number; savedCents: number; reservedCents: number; businessCashCents: number }): BalanceComposition {
-  assertCents(input.grossCents);
-  assertCents(input.savedCents);
-  assertCents(input.reservedCents);
-  assertCents(input.businessCashCents);
-  return { ...input, availableCents: input.grossCents - input.savedCents - input.reservedCents - input.businessCashCents };
 }

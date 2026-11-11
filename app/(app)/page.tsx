@@ -16,7 +16,7 @@ import { getAlerts } from "@/lib/alerts/queries";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, formatMoment, formatMonthLabel, todayLocal } from "@/lib/dates";
 import { db } from "@/lib/db";
-import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
+import { summarizeBalances } from "@/lib/finance/balance";
 import { monthInsights, pickHighlight } from "@/lib/finance/insights";
 import { perHundred, savingsRateBps } from "@/lib/finance/month-flow";
 import { monthAchievements, savingsStreak } from "@/lib/finance/month-score";
@@ -24,7 +24,7 @@ import { formatBps, shareBps } from "@/lib/finance/share";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
 import { getAreaSpend, getHighlightCandidates } from "@/lib/queries/area-spend";
 import { getMonthOverview } from "@/lib/queries/month-flow";
-import { getAccounts, getBucketTotals, getConnections, getRecentTransactions } from "@/lib/queries/overview";
+import { getAccounts, getConnections, getRecentTransactions } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
 import { countReviewQueue } from "@/lib/rules/queue";
@@ -50,10 +50,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const today = todayLocal();
   const month = today.slice(0, 7);
 
-  const [connections, accounts, buckets, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates, duplicates] = await Promise.all([
+  const [connections, accounts, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates, duplicates] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
-    getBucketTotals(user.id, query),
     getRecentTransactions(user.id, query, RECENT_DAYS, RECENT_ITEMS),
     manualRefreshAvailableAt(user.id),
     connectionAlertRules(user.id),
@@ -73,7 +72,6 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
   const balance = summarizeBalances(accounts);
-  const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
   const hasCash = accounts.some((account) => account.type === "CHECKING" || account.type === "SAVINGS");
   const issues = connections.flatMap((connection) => connectionIssues(connection, rules.consent?.daysBefore ?? null));
   // A legenda mostra a conexão mais desatualizada: uma conexão em dia não esconde outra parada há dias.
@@ -150,7 +148,7 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
       ) : null}
 
       <BalanceHero
-        amountCents={composition.availableCents}
+        amountCents={balance.grossCents}
         scope={scopeValue}
         status={connections.length === 0 || !hasCash ? "empty" : "ready"}
         caption={oldestRead ? `Dados do banco ${formatElapsed(oldestRead)}` : undefined}
@@ -162,12 +160,11 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
         composition={
           <BalanceComposition
             segments={[
-              { key: "disponivel", label: "Disponível", cents: composition.availableCents },
-              ...(composition.savedCents > 0 ? [{ key: "guardado" as const, label: "Caixinhas", cents: composition.savedCents, href: "/contas" }] : []),
-              { key: "reservado", label: "Reservado", cents: composition.reservedCents, href: "/reservas" },
-              { key: "negocio", label: "Caixa do negócio", cents: composition.businessCashCents, href: "/negocio" },
+              { key: "pessoal", label: "Pessoal", cents: balance.personalCents, href: "/contas" },
+              { key: "guardado", label: "Guardado", cents: balance.savedCents, href: "/contas" },
+              { key: "empresa", label: "Empresa", cents: balance.businessCents, href: "/contas" },
             ]}
-            total={{ label: "Saldo nas contas", cents: composition.grossCents, href: "/contas" }}
+            link={{ label: "Ver conta por conta", href: "/contas" }}
           />
         }
       />

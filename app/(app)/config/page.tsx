@@ -167,8 +167,8 @@ export default async function ConfigPage({ searchParams }: PageProps<"/config">)
           <li>
             <RowLink href="/config/receitas">
               <span className="flex flex-1 flex-col gap-[3px]">
-                <span className="text-[16px]">Receitas e reservas</span>
-                <span className="text-[13px] text-text-secondary">Streams, % de imposto e custo, DAS e saldos dos buckets</span>
+                <span className="text-[16px]">Renda e contas fixas</span>
+                <span className="text-[13px] text-text-secondary">Fontes de renda e o lembrete do DAS</span>
               </span>
             </RowLink>
           </li>
@@ -193,7 +193,7 @@ export default async function ConfigPage({ searchParams }: PageProps<"/config">)
         </h2>
         <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
           <strong className="font-semibold text-text-primary">O conteúdo do chat passa pela API do Gemini (Google)</strong>: o que você
-          escreve, o texto abaixo, os nomes das suas categorias, metas e streams, e os números que a IA consulta para responder
+          escreve, o texto abaixo, os nomes das suas categorias, metas e fontes de renda, e os números que a IA consulta para responder
           (saldos, gastos, metas, carteira). A IA só lê; não grava nada e não recomenda compra ou venda de investimento.
         </p>
         <AboutMeForm initial={aboutMe ?? ""} />

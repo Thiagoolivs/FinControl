@@ -106,7 +106,7 @@ export function Catalog() {
             scope={scope}
             amountCents={data.heroCents}
             caption={data.caption}
-            composition={<BalanceComposition segments={data.segments} total={data.total} />}
+            composition={<BalanceComposition segments={data.segments} link={data.link} />}
             emptyAction={<Button>Conectar conta</Button>}
             errorAction={retry}
           />

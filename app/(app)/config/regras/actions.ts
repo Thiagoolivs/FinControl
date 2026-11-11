@@ -15,7 +15,6 @@ const ruleInput = z.object({
   scope: z.enum(["AMBOS", "PF", "PJ"]),
   categoryId: z.string(),
   revenueStreamId: z.string(),
-  bucketId: z.string(),
   priority: z.number().int().min(1).max(9999),
   applyRetroactively: z.boolean(),
 });
@@ -24,13 +23,12 @@ export async function saveRuleAction(input: z.input<typeof ruleInput>): Promise<
   const user = await requireUser();
   const parsed = ruleInput.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
-  const { id, applyRetroactively, scope, categoryId, revenueStreamId, bucketId, ...rest } = parsed.data;
+  const { id, applyRetroactively, scope, categoryId, revenueStreamId, ...rest } = parsed.data;
   const data = {
     ...rest,
     scope: scope === "AMBOS" ? null : scope,
     categoryId: categoryId || null,
     revenueStreamId: revenueStreamId || null,
-    bucketId: bucketId || null,
   };
   try {
     const changed = id

@@ -27,7 +27,7 @@ export default async function GoalsPage() {
         <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
           {running.length === 0
             ? "Nenhuma meta em andamento."
-            : `Soma de ${running.length} ${running.length === 1 ? "meta" : "metas"} em andamento${late > 0 ? `; ${late} ${late === 1 ? "atrasada" : "atrasadas"}` : ""}. Entra na projeção como saída.`}
+            : `Soma de ${running.length} ${running.length === 1 ? "meta" : "metas"} em andamento${late > 0 ? `; ${late} ${late === 1 ? "atrasada" : "atrasadas"}` : ""}.`}
           {unset > 0 ? ` ${unset} ${unset === 1 ? "meta ainda precisa" : "metas ainda precisam"} de valor e data.` : ""}
         </p>
       </section>

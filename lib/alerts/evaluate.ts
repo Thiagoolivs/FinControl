@@ -1,14 +1,14 @@
 import "server-only";
 import type { AlertType, Scope, Severity } from "@/generated/prisma/enums";
-import { addDays, addMonths, formatDayLabel, formatMonthLabel, fromDbDate, monthsBetween, todayLocal, toDbDate } from "@/lib/dates";
+import { addDays, addMonths, daysBetween, formatDayLabel, formatMonthLabel, fromDbDate, monthsBetween, todayLocal, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
 import { exceedsAverage, meiLimitStage } from "@/lib/finance/alerts";
 import { formatCents } from "@/lib/finance/money";
+import { nextDueDate } from "@/lib/finance/obligations";
 import { formatBps } from "@/lib/finance/share";
 import { getGoals } from "@/lib/goals/queries";
 import { getProjection } from "@/lib/projection/build";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
-import { incomeQueueWhere } from "@/lib/rules/queue";
 import { type ActiveRule, activeAlertRules } from "./rules";
 
 const RECENT_DAYS = 7;
@@ -55,9 +55,8 @@ export async function evaluateAlerts(userId: string, since: Date): Promise<numbe
   add("FATURA_ACIMA_PREVISTO", cardAboveForecast);
   add("META_ATRASADA", lateGoals);
   add("SALDO_PROJETADO_NEGATIVO", negativeProjection);
-  add("RESERVA_IMPOSTO_BAIXA", lowTaxReserve);
-  add("ENTRADA_SEM_STREAM", incomeWithoutStream);
   add("LIMITE_FATURAMENTO_MEI", meiLimit);
+  add("OBRIGACAO_VENCENDO", obligationDue);
 
   const alerts = (await Promise.all(checks)).flat();
   if (alerts.length === 0) return 0;
@@ -126,7 +125,7 @@ async function newSubscription(_rule: ActiveRule, { userId, since }: Context, ma
     make({
       scope: item.scope,
       title: `Assinatura nova: ${item.transactions[0]?.descriptionClean ?? "recorrente"}`,
-      body: `${formatCents(-item.avgAmountCents)} ${item.intervalDays === 7 ? "por semana" : item.intervalDays === 365 ? "por ano" : "por mês"}. Já entra na projeção.`,
+      body: `${formatCents(-item.avgAmountCents)} ${item.intervalDays === 7 ? "por semana" : item.intervalDays === 365 ? "por ano" : "por mês"}.`,
       payload: { seriesId: item.id, amountCents: item.avgAmountCents },
       dedupeKey: `ASSINATURA_NOVA:${item.id}`,
     }),
@@ -193,62 +192,38 @@ async function lateGoals(_rule: ActiveRule, { userId, month }: Context, make: Ma
     );
 }
 
-/** Projeção consolidada negativa no mês corrente ou nos próximos N. Um alerta por mês negativo encontrado. */
+/** "Se continuar assim" (PF + PJ) negativo no mês corrente ou nos próximos N. Um alerta por mês encontrado. */
 async function negativeProjection(rule: ActiveRule, { userId, month }: Context, make: Maker): Promise<NewAlert[]> {
-  const projection = await getProjection(userId, { consolidated: true }, { refreshRecurring: false });
-  const negative = projection.months.slice(0, (rule.params.meses ?? 3) + 1).find((item) => item.realisticCents < 0);
+  const projection = await getProjection(userId, { consolidated: true });
+  const negative = projection.months.slice(0, (rule.params.meses ?? 3) + 1).find((item) => item.expectedCents < 0);
   if (!negative) return [];
   return [
     make({
       scope: "PF",
-      title: `Saldo projetado negativo em ${formatMonthLabel(negative.month)}`,
-      body: `Com as premissas de hoje, o saldo pessoal chega a ${formatCents(negative.realisticCents)} no fim do mês.`,
-      payload: { month: negative.month, realisticCents: negative.realisticCents },
+      title: `Dinheiro acaba em ${formatMonthLabel(negative.month)}`,
+      body: `Se continuar como nos últimos meses, fica em ${formatCents(negative.expectedCents)} no fim de ${formatMonthLabel(negative.month)}.`,
+      payload: { month: negative.month, expectedCents: negative.expectedCents },
       dedupeKey: `SALDO_PROJETADO_NEGATIVO:${month}:${negative.month}`,
     }),
   ];
 }
 
-/** Reserva de imposto menor que as obrigações fixas que saem dela (o DAS do mês). */
-async function lowTaxReserve(_rule: ActiveRule, { userId, month }: Context, make: Maker): Promise<NewAlert[]> {
-  const buckets = await db().bucket.findMany({
-    where: { userId, type: "RESERVA_IMPOSTO" },
-    select: { id: true, name: true, scope: true, balanceCents: true, obligations: { where: { active: true }, select: { amountCents: true } } },
+/** Lembrete de conta fixa (ex.: DAS) quando faltam até N dias para o vencimento. Um por conta e mês. */
+async function obligationDue(rule: ActiveRule, { userId, today }: Context, make: Maker): Promise<NewAlert[]> {
+  const obligations = await db().fixedObligation.findMany({
+    where: { userId, active: true },
+    select: { id: true, name: true, scope: true, amountCents: true, dueDay: true },
   });
-  return buckets.flatMap((bucket) => {
-    const needed = bucket.obligations.reduce((sum, obligation) => sum + obligation.amountCents, 0);
-    if (needed <= 0 || bucket.balanceCents >= needed) return [];
+  return obligations.flatMap((obligation) => {
+    const due = nextDueDate(today, obligation.dueDay);
+    if (daysBetween(today, due) > (rule.params.diasAntes ?? 3)) return [];
     return [
       make({
-        scope: bucket.scope,
-        title: `${bucket.name} abaixo do esperado`,
-        body: `Tem ${formatCents(bucket.balanceCents)}, e as obrigações do mês pedem ${formatCents(needed)}. Ajuste o saldo ou reveja o que foi pago com ela.`,
-        payload: { bucketId: bucket.id, balanceCents: bucket.balanceCents, neededCents: needed },
-        dedupeKey: `RESERVA_IMPOSTO_BAIXA:${bucket.id}:${month}`,
-      }),
-    ];
-  });
-}
-
-/** Entradas recentes sem stream: um alerta por escopo cada vez que chega uma nova. */
-async function incomeWithoutStream(_rule: ActiveRule, { userId, today }: Context, make: Maker): Promise<NewAlert[]> {
-  const rows = await db().transaction.findMany({
-    where: { ...incomeQueueWhere(userId), date: { gte: toDbDate(addDays(today, -RECENT_DAYS)) } },
-    select: { id: true, amountCents: true, scope: true },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-  });
-  return SCOPES.flatMap((scope) => {
-    const inScope = rows.filter((row) => row.scope === scope);
-    const [newest] = inScope;
-    if (!newest) return [];
-    const total = inScope.reduce((sum, row) => sum + row.amountCents, 0);
-    return [
-      make({
-        scope,
-        title: inScope.length === 1 ? "Entrada sem stream" : `${inScope.length} entradas sem stream`,
-        body: `${formatCents(total)} recebidos sem fonte de receita. Atribua na fila de revisão para lançar as reservas.`,
-        payload: { transactionId: newest.id, count: inScope.length, cents: total },
-        dedupeKey: `ENTRADA_SEM_STREAM:${newest.id}`,
+        scope: obligation.scope,
+        title: `${obligation.name} vence ${formatDayLabel(due, today) === "Hoje" ? "hoje" : `dia ${Number(due.slice(8, 10))}`}`,
+        body: `${formatCents(obligation.amountCents)}. Se já pagou, pode ignorar.`,
+        payload: { obligationId: obligation.id, dueDate: due, amountCents: obligation.amountCents },
+        dedupeKey: `OBRIGACAO_VENCENDO:${obligation.id}:${due}`,
       }),
     ];
   });

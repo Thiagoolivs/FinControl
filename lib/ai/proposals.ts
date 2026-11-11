@@ -4,15 +4,13 @@ import type { Prisma } from "@/generated/prisma/client";
 import { compilePattern, normalizeText } from "@/lib/categorization/match";
 import { formatMonthLabel, fromDbDate, isMonth, todayLocal, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
-import { splitIncome } from "@/lib/finance/allocation";
 import { contributionMonths, monthlyRequiredCents } from "@/lib/finance/goals";
 import { decimalToCents, formatCents } from "@/lib/finance/money";
-import { formatBps } from "@/lib/finance/share";
 import { nextOccurrence } from "@/lib/finance/recurring";
 import { recurringKey } from "@/lib/projection/recurring";
 import { createGoal, updateGoal } from "@/lib/goals/mutations";
 import { createRule, setTransactionCategory } from "@/lib/rules/mutations";
-import { registerWithdrawal, setTransactionStream } from "@/lib/streams/mutations";
+import { setTransactionStream } from "@/lib/streams/mutations";
 import type { FunctionDeclaration, ResponseSchema } from "./gemini";
 import { ToolInputError, type ToolContext } from "./tools";
 
@@ -244,21 +242,21 @@ register({
 register({
   declaration: {
     name: "proporMarcarRecorrente",
-    description: "Propõe marcar uma transação como recorrente (entra na projeção todo mês) ou como não recorrente (sai da projeção). Não grava: o usuário confirma no card.",
+    description: "Propõe marcar uma transação como recorrente (conta fixa ou assinatura) ou como não recorrente. Não grava: o usuário confirma no card.",
     parameters: object({ transacaoId: str("Id da transação."), isRecurring: bool("true = recorrente; false = não é recorrente.") }, ["transacaoId", "isRecurring"]),
   },
   schema: z.object({ transacaoId: z.string().min(1), isRecurring: z.boolean() }),
   prepare: async (args, { userId }) => {
     const [row] = await ownTransactions(userId, [args.transacaoId]);
     if (!row) throw new ToolInputError("Transação não encontrada.");
-    if (row.transferPeerId) throw new ToolInputError("Transferência entre contas não entra na projeção.");
+    if (row.transferPeerId) throw new ToolInputError("Transferência entre contas não pode ser marcada como recorrente.");
     return {
       args: { transactionId: row.id, isRecurring: args.isRecurring },
       preview: {
         title: args.isRecurring ? "Marcar como recorrente" : "Marcar como não recorrente",
         rows: [
           { label: "Transação", value: describe([row]) },
-          { label: "Na projeção", value: args.isRecurring ? "Entra todo mês, com este valor" : "Sai das recorrentes" },
+          { label: "Recorrente", value: args.isRecurring ? "Sim, todo mês, com este valor" : "Não, sai das recorrentes" },
         ],
       },
     };
@@ -306,28 +304,22 @@ register({
 register({
   declaration: {
     name: "proporAtribuicaoStream",
-    description: "Propõe atribuir entradas (ids de getTransacoes) a uma stream de receita; as reservas da stream são lançadas. Não grava: o usuário confirma no card.",
-    parameters: object({ transacaoIds: ids("Ids das entradas."), streamId: str("Id da stream.") }, ["transacaoIds", "streamId"]),
+    description: "Propõe atribuir entradas (ids de getTransacoes) a uma fonte de renda. Não grava: o usuário confirma no card.",
+    parameters: object({ transacaoIds: ids("Ids das entradas."), streamId: str("Id da fonte de renda.") }, ["transacaoIds", "streamId"]),
   },
   schema: z.object({ transacaoIds: z.array(z.string().min(1)).min(1).max(MAX_TRANSACTIONS), streamId: z.string().min(1) }),
   prepare: async (args, { userId }) => {
-    const stream = await db().revenueStream.findFirst({ where: { id: args.streamId, userId }, select: { id: true, name: true, type: true, taxReserveBps: true, costReserveBps: true } });
-    if (!stream) throw new ToolInputError("Stream não encontrada. Use um id da lista de streams.");
+    const stream = await db().revenueStream.findFirst({ where: { id: args.streamId, userId }, select: { id: true, name: true } });
+    if (!stream) throw new ToolInputError("Fonte de renda não encontrada. Use um id da lista de fontes de renda.");
     const rows = await ownTransactions(userId, args.transacaoIds);
-    if (rows.some((row) => row.amountCents <= 0)) throw new ToolInputError("Só entradas recebem stream.");
-    const splits = rows.map((row) => splitIncome(row.amountCents, stream.taxReserveBps, stream.costReserveBps));
-    const tax = splits.reduce((sum, split) => sum + split.taxCents, 0);
-    const cost = splits.reduce((sum, split) => sum + split.costCents, 0);
-    const rest = splits.reduce((sum, split) => sum + split.restCents, 0);
+    if (rows.some((row) => row.amountCents <= 0)) throw new ToolInputError("Só entradas recebem fonte de renda.");
     return {
       args: { transactionIds: rows.map((row) => row.id), streamId: stream.id },
       preview: {
         title: `Atribuir a ${stream.name}`,
         rows: [
           { label: "Entradas", value: describe(rows) },
-          { label: `Imposto (${formatBps(stream.taxReserveBps, 1)})`, value: brl(tax) },
-          { label: `Custo (${formatBps(stream.costReserveBps, 1)})`, value: brl(cost) },
-          { label: stream.type === "VENTURE" ? "Caixa do negócio" : "Disponível", value: brl(rest) },
+          { label: "Total", value: brl(rows.reduce((sum, row) => sum + row.amountCents, 0)) },
         ],
       },
     };
@@ -337,39 +329,6 @@ register({
     const before = await db().transaction.findMany({ where: { userId, id: { in: input.transactionIds } }, select: { id: true, revenueStreamId: true, categoryId: true } });
     for (const id of input.transactionIds) await setTransactionStream(userId, id, input.streamId);
     return { entity: "Transaction", entityId: input.transactionIds.length === 1 ? (input.transactionIds[0] ?? null) : null, before: { transacoes: before }, after: input };
-  },
-});
-
-register({
-  declaration: {
-    name: "proporRetiradaNegocio",
-    description: "Propõe registrar uma retirada do caixa do negócio para o disponível. Não grava: o usuário confirma no card.",
-    parameters: object({ valor: num("Valor em reais."), data: str('Data, "AAAA-MM-DD". Sem ela, hoje.') }, ["valor"]),
-  },
-  schema: z.object({ valor: z.number().positive(), data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional() }),
-  prepare: async (args, { userId, today }) => {
-    const date = args.data ?? today;
-    if (date > today) throw new ToolInputError("A data da retirada não pode ser no futuro.");
-    const bucket = await db().bucket.findFirst({ where: { userId, type: "CAIXA_PROJETO" }, select: { id: true, name: true, balanceCents: true }, orderBy: { createdAt: "asc" } });
-    if (!bucket) throw new ToolInputError("Não há caixa de negócio cadastrado.");
-    const amountCents = decimalToCents(args.valor);
-    return {
-      args: { bucketId: bucket.id, amountCents, date },
-      preview: {
-        title: "Registrar retirada",
-        rows: [
-          { label: "Valor", value: brl(amountCents) },
-          { label: "Data", value: date.split("-").reverse().join("/") },
-          { label: "Sai de", value: bucket.name },
-          { label: "Caixa depois", value: brl(bucket.balanceCents - amountCents) },
-        ],
-      },
-    };
-  },
-  execute: async (userId, args) => {
-    const input = z.object({ bucketId: z.string(), amountCents: z.number().int().positive(), date: z.string() }).parse(args);
-    await registerWithdrawal(userId, { ...input, note: "Retirada (pelo chat)" });
-    return { entity: "Bucket", entityId: input.bucketId, after: input };
   },
 });
 

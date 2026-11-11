@@ -18,13 +18,12 @@ describe("validateRuleDraft", () => {
     expect(validateRuleDraft(draft({ pattern: "(", matchType: "REGEX", categoryId: "x" })).pattern).toBe("Expressão regular inválida.");
   });
 
-  it("saída precisa de categoria; bucket sozinho não classifica", () => {
+  it("saída precisa de categoria", () => {
     expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", revenueStreamId: "salario" })).destination).toBeDefined();
-    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", bucketId: "imposto" })).destination).toBeDefined();
-    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", bucketId: "imposto", categoryId: "das" }))).toEqual({});
+    expect(validateRuleDraft(draft({ pattern: "DAS", direction: "SAIDA", categoryId: "das" }))).toEqual({});
   });
 
-  it("entrada aceita só a stream", () => {
+  it("entrada aceita só a fonte de renda", () => {
     expect(validateRuleDraft(draft({ pattern: "TED ACME", direction: "ENTRADA", revenueStreamId: "salario" }))).toEqual({});
     expect(validateRuleDraft(draft({ pattern: "TED ACME", direction: "AMBAS", revenueStreamId: "salario" }))).toEqual({});
   });
@@ -37,9 +36,9 @@ describe("validateRuleDraft", () => {
 
 describe("normalizeRuleDraft", () => {
   it("descarta o que não se aplica ao sentido", () => {
-    const base = { pattern: " TED ACME ", revenueStreamId: "salario", bucketId: "imposto" };
-    expect(normalizeRuleDraft(draft({ ...base, direction: "ENTRADA" }))).toMatchObject({ pattern: "TED ACME", revenueStreamId: "salario", bucketId: "" });
-    expect(normalizeRuleDraft(draft({ ...base, direction: "SAIDA" }))).toMatchObject({ revenueStreamId: "", bucketId: "imposto" });
-    expect(normalizeRuleDraft(draft({ ...base, direction: "AMBAS" }))).toMatchObject({ revenueStreamId: "salario", bucketId: "imposto" });
+    const base = { pattern: " TED ACME ", revenueStreamId: "salario" };
+    expect(normalizeRuleDraft(draft({ ...base, direction: "ENTRADA" }))).toMatchObject({ pattern: "TED ACME", revenueStreamId: "salario" });
+    expect(normalizeRuleDraft(draft({ ...base, direction: "SAIDA" }))).toMatchObject({ revenueStreamId: "" });
+    expect(normalizeRuleDraft(draft({ ...base, direction: "AMBAS" }))).toMatchObject({ revenueStreamId: "salario" });
   });
 });

@@ -1,103 +1,103 @@
 import { addMonths, daysBetween, monthRange } from "@/lib/dates";
 import { assertCents } from "./money";
-import { type Cadence, nextOccurrence } from "./recurring";
 
-export type ProjectionInput = {
-  today: string;
-  /** Quantos meses mostrar, a partir do corrente (que entra só com o que ainda falta acontecer). */
-  horizonMonths: number;
-  /** Ponto de partida: disponível de hoje menos a fatura em aberto. */
-  openingCents: number;
-  /** Séries recorrentes ativas; receita já sem as reservas da stream. */
-  recurring: readonly { amountCents: number; intervalDays: Cadence["intervalDays"]; nextExpectedDate: string }[];
-  /** Parcelas de cartão que ainda vão cair (negativas). */
-  installments: readonly { month: string; amountCents: number }[];
-  /** Média mensal dos gastos que não são recorrentes nem parcela (≤ 0). */
-  variableMonthlyCents: number;
-  /** Aporte de cada meta até o mês do alvo; no mês corrente, só o que falta aportar nele. */
-  goals: readonly { monthlyCents: number; untilMonth: string; currentMonthCents: number }[];
-  /** Reservado todo mês do disponível (ex.: DAS). O do mês corrente já foi reservado. */
-  obligationsMonthlyCents: number;
-  /** Média de projetos avulsos (já sem reservas): só na linha otimista. Null = sem projetos. */
-  projectsMonthlyCents: number | null;
-  /** Caixa do negócio, linha separada. Null = sem negócio no escopo. */
-  business: { openingCents: number; monthlyNetCents: number } | null;
+export type FlowRow = {
+  date: string;
+  amountCents: number;
+  /** Transferência entre duas contas do mesmo escopo (ou pagamento da fatura): se anula, não é entrada nem saída. */
+  internal: boolean;
 };
 
-export type ProjectedMonth = {
-  month: string;
-  incomeCents: number;
-  expenseCents: number;
-  goalsCents: number;
-  obligationsCents: number;
-  /** Saldo pessoal no fim do mês, sem projetos avulsos. */
-  realisticCents: number;
-  optimisticCents: number | null;
-  businessCents: number | null;
-};
+export type MonthFlowSummary = { month: string; inCents: number; outCents: number; netCents: number };
 
-/** Parte de `cents` proporcional a `part / whole`, arredondada para o lado pior (gasto maior, receita menor). */
+/**
+ * Quanto entrou e saiu em cada mês pedido. Transferência entre contas do próprio escopo fica de fora (as duas
+ * pernas se anulam); a que vem de fora do escopo conta (ex.: Pix da PJ olhando só a PF).
+ */
+export function flowsByMonth(rows: readonly FlowRow[], months: readonly string[]): MonthFlowSummary[] {
+  const byMonth = new Map(months.map((month) => [month, { month, inCents: 0, outCents: 0, netCents: 0 }]));
+  for (const row of rows) {
+    assertCents(row.amountCents);
+    const entry = byMonth.get(row.date.slice(0, 7));
+    if (!entry || row.internal || row.amountCents === 0) continue;
+    if (row.amountCents > 0) entry.inCents += row.amountCents;
+    else entry.outCents -= row.amountCents;
+    entry.netCents += row.amountCents;
+  }
+  return months.map((month) => byMonth.get(month) as MonthFlowSummary);
+}
+
+/** Parte de `cents` proporcional a `part / whole`, arredondada para o lado pior. */
 export function prorate(cents: number, part: number, whole: number): number {
   if (whole <= 0) return 0;
   return Math.floor((cents * part) / whole);
 }
 
+export type ProjectionInput = {
+  today: string;
+  /** Quantos meses mostrar, a partir do corrente (que entra só com o que falta do mês). */
+  horizonMonths: number;
+  /** Ponto de partida: dinheiro livre hoje (sem caixinhas), já tirando a fatura do cartão em aberto. */
+  openingCents: number;
+  /** Meses fechados recentes que os dados cobrem por inteiro. */
+  history: readonly MonthFlowSummary[];
+};
+
+export type ProjectedMonth = { month: string; expectedCents: number; lowCents: number; highCents: number };
+
+export type Projection = {
+  /** Média do que sobrou (ou faltou) por mês; null sem nenhum mês de histórico. */
+  averageNetCents: number | null;
+  averageInCents: number | null;
+  averageOutCents: number | null;
+  worst: MonthFlowSummary | null;
+  best: MonthFlowSummary | null;
+  months: ProjectedMonth[];
+};
+
+const floorAverage = (values: readonly number[]) => Math.floor(values.reduce((sum, value) => sum + value, 0) / values.length);
+
 /**
- * Saldo mês a mês. A projeção não adivinha: soma só o que está nas premissas (recorrentes, parcelas,
- * média dos gastos variáveis, metas, obrigações). O mês corrente conta só o que ainda falta acontecer.
+ * "Se continuar assim": o dinheiro livre de hoje somado à média do que sobrou nos últimos meses. A faixa é
+ * todo mês igual ao pior e ao melhor mês recente. O mês corrente conta só os dias que faltam.
  */
-export function projectCashFlow(input: ProjectionInput): ProjectedMonth[] {
-  for (const value of [input.openingCents, input.variableMonthlyCents, input.obligationsMonthlyCents]) assertCents(value);
+export function projectByAverage(input: ProjectionInput): Projection {
+  assertCents(input.openingCents);
   const current = input.today.slice(0, 7);
   const months = Array.from({ length: input.horizonMonths }, (_, index) => addMonths(current, index));
-  const last = months[months.length - 1];
-  if (!last) return [];
-  const end = monthRange(last).to;
-
-  const income = new Map<string, number>();
-  const expense = new Map<string, number>();
-  const add = (map: Map<string, number>, month: string, cents: number) => {
-    const key = month < current ? current : month;
-    map.set(key, (map.get(key) ?? 0) + cents);
-  };
-  for (const series of input.recurring) {
-    assertCents(series.amountCents);
-    for (let date = series.nextExpectedDate; date <= end; date = nextOccurrence(date, series.intervalDays)) {
-      add(series.amountCents > 0 ? income : expense, date.slice(0, 7), series.amountCents);
-    }
-  }
-  for (const installment of input.installments) {
-    assertCents(installment.amountCents);
-    if (installment.month <= last) add(expense, installment.month, installment.amountCents);
-  }
-
-  const daysInMonth = daysBetween(monthRange(current).from, monthRange(current).to) + 1;
-  const daysLeft = daysBetween(input.today, monthRange(current).to);
-  let realistic = input.openingCents;
-  let projects = 0;
-  let business = input.business?.openingCents ?? 0;
-  return months.map((month, index) => {
-    const first = index === 0;
-    const variable = first ? prorate(input.variableMonthlyCents, daysLeft, daysInMonth) : input.variableMonthlyCents;
-    const goalsCents = 0 - input.goals.reduce(
-      (sum, goal) => sum + (first ? goal.currentMonthCents : month <= goal.untilMonth ? goal.monthlyCents : 0),
-      0,
-    );
-    const obligationsCents = first ? 0 : 0 - input.obligationsMonthlyCents;
-    const incomeCents = income.get(month) ?? 0;
-    const expenseCents = (expense.get(month) ?? 0) + variable;
-    realistic += incomeCents + expenseCents + goalsCents + obligationsCents;
-    if (input.projectsMonthlyCents !== null && !first) projects += input.projectsMonthlyCents;
-    if (input.business) business += first ? prorate(input.business.monthlyNetCents, daysLeft, daysInMonth) : input.business.monthlyNetCents;
+  const history = input.history;
+  if (history.length === 0) {
     return {
-      month,
-      incomeCents,
-      expenseCents,
-      goalsCents,
-      obligationsCents,
-      realisticCents: realistic,
-      optimisticCents: input.projectsMonthlyCents === null ? null : realistic + projects,
-      businessCents: input.business ? business : null,
+      averageNetCents: null,
+      averageInCents: null,
+      averageOutCents: null,
+      worst: null,
+      best: null,
+      months: months.map((month) => ({ month, expectedCents: input.openingCents, lowCents: input.openingCents, highCents: input.openingCents })),
     };
-  });
+  }
+  const nets = history.map((month) => month.netCents);
+  const averageNetCents = floorAverage(nets);
+  const worst = history.reduce((min, month) => (month.netCents < min.netCents ? month : min));
+  const best = history.reduce((max, month) => (month.netCents > max.netCents ? month : max));
+  const { from, to } = monthRange(current);
+  const daysInMonth = daysBetween(from, to) + 1;
+  const daysLeft = daysBetween(input.today, to);
+  let expected = input.openingCents;
+  let low = input.openingCents;
+  let high = input.openingCents;
+  return {
+    averageNetCents,
+    averageInCents: floorAverage(history.map((month) => month.inCents)),
+    averageOutCents: floorAverage(history.map((month) => month.outCents)),
+    worst,
+    best,
+    months: months.map((month, index) => {
+      const share = (cents: number) => (index === 0 ? prorate(cents, daysLeft, daysInMonth) : cents);
+      expected += share(averageNetCents);
+      low += share(worst.netCents);
+      high += share(best.netCents);
+      return { month, expectedCents: expected, lowCents: low, highCents: high };
+    }),
+  };
 }

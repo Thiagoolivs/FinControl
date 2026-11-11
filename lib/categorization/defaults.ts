@@ -4,7 +4,7 @@ import type { IconName } from "@/components/ui/icon";
 export type DefaultCategory = { name: string; icon: IconName; kind: CategoryKind; children?: string[] };
 
 /**
- * Entradas que não são receita de uma stream (não geram reserva). Quem já tinha categorias recebeu esta
+ * Entradas que não são receita de uma fonte de renda. Quem já tinha categorias recebeu esta
  * árvore pela migration `fila_recente_e_entradas`, com os mesmos nomes.
  */
 export const INCOME_CATEGORIES: DefaultCategory = {

@@ -4,7 +4,7 @@ import type { Scope } from "@/generated/prisma/enums";
 import { getAlerts } from "@/lib/alerts/queries";
 import { formatMonthLabel, fromDbDate, isMonth, monthRange, toDbDate } from "@/lib/dates";
 import { db } from "@/lib/db";
-import { composeBalance, summarizeBalances } from "@/lib/finance/balance";
+import { summarizeBalances } from "@/lib/finance/balance";
 import { summarizeFlows } from "@/lib/finance/flows";
 import { completionMonth, contributionMonths, monthlyRequiredCents } from "@/lib/finance/goals";
 import { decimalToCents, formatCents } from "@/lib/finance/money";
@@ -12,10 +12,9 @@ import { formatBps, variationBps } from "@/lib/finance/share";
 import { getGoals } from "@/lib/goals/queries";
 import { getPortfolio } from "@/lib/portfolio/queries";
 import { getProjection } from "@/lib/projection/build";
-import { getAccounts, getBucketTotals } from "@/lib/queries/overview";
+import { getAccounts } from "@/lib/queries/overview";
 import type { ScopeQuery } from "@/lib/queries/scope";
 import { getMonthCategoryBreakdown, listTransactions } from "@/lib/queries/transactions";
-import { getBusinessSummaries } from "@/lib/streams/queries";
 import type { FunctionDeclaration, ResponseSchema } from "./gemini";
 
 /** Contexto de cada chamada: quem pergunta e de qual escopo de tela. */
@@ -80,23 +79,21 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
     declaration: {
       name: "getSaldoConsolidado",
       description:
-        "Saldo de hoje: disponível (o que dá para gastar), guardado em caixinhas, reservado (imposto + custo), caixa do negócio e saldo bruto das contas (com aplicação automática e caixinhas), separados. Também o limite usado dos cartões.",
+        "Saldo de hoje: quanto tem nas contas, dividido em pessoal (contas PF), guardado (caixinhas) e empresa (contas PJ), com a aplicação automática e o limite usado dos cartões.",
       parameters: object({ scope: SCOPE, consolidated: CONSOLIDATED }),
     },
     run: async (raw, context) => {
       const args = parse(z.object(scopeArgs), raw);
       const query = scopeOf(args, context);
-      const [accounts, buckets] = await Promise.all([getAccounts(context.userId, query), getBucketTotals(context.userId, query)]);
+      const accounts = await getAccounts(context.userId, query);
       const balance = summarizeBalances(accounts);
-      const composition = composeBalance({ grossCents: balance.grossCents, savedCents: balance.savedCents, ...buckets });
       return {
         escopo: scopeLabel(query),
-        disponivel: brl(composition.availableCents),
-        reservado: brl(composition.reservedCents),
-        caixaNegocio: brl(composition.businessCashCents),
-        guardadoEmCaixinhas: brl(composition.savedCents),
+        totalNasContas: brl(balance.grossCents),
+        pessoal: brl(balance.personalCents),
+        guardadoEmCaixinhas: brl(balance.savedCents),
+        empresa: brl(balance.businessCents),
         aplicacaoAutomatica: brl(balance.autoInvestedCents),
-        saldoBrutoContas: brl(composition.grossCents),
         cartoesLimiteUsado: brl(balance.creditUsedCents),
         contas: accounts
           .filter((account) => account.type !== "INVESTMENT")
@@ -115,8 +112,8 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
   getReceitaPorStream: {
     declaration: {
       name: "getReceitaPorStream",
-      description: "Receita recebida no mês por stream (salário, projetos, negócio), com o que foi reservado para imposto e custo.",
-      parameters: object({ periodo: PERIODO, streamId: str("Id de uma stream específica.") }),
+      description: "Renda recebida no mês por fonte de renda (salário, projetos, negócio…).",
+      parameters: object({ periodo: PERIODO, streamId: str("Id de uma fonte de renda específica.") }),
     },
     run: async (raw, context) => {
       const args = parse(z.object({ periodo, streamId: z.string().optional() }), raw);
@@ -124,18 +121,16 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
       const { from, to } = monthRange(month);
       const streams = await db().revenueStream.findMany({
         where: { userId: context.userId, ...(args.streamId ? { id: args.streamId } : {}) },
-        select: { id: true, name: true, type: true, scope: true, taxReserveBps: true, costReserveBps: true },
+        select: { id: true, name: true, type: true, scope: true },
       });
       const rows = await db().transaction.findMany({
         where: { userId: context.userId, isIgnored: false, amountCents: { gt: 0 }, revenueStreamId: { in: streams.map((stream) => stream.id) }, date: { gte: toDbDate(from), lte: toDbDate(to) } },
-        select: { amountCents: true, revenueStreamId: true, bucketEntries: { where: { kind: "ALOCACAO" }, select: { amountCents: true, bucket: { select: { type: true } } } } },
+        select: { amountCents: true, revenueStreamId: true },
       });
       return {
         periodo: formatMonthLabel(month),
-        streams: streams.map((stream) => {
+        fontes: streams.map((stream) => {
           const own = rows.filter((row) => row.revenueStreamId === stream.id);
-          const entries = own.flatMap((row) => row.bucketEntries);
-          const sum = (type: string) => entries.filter((entry) => entry.bucket.type === type).reduce((total, entry) => total + entry.amountCents, 0);
           return {
             id: stream.id,
             nome: stream.name,
@@ -143,38 +138,8 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
             escopo: stream.scope,
             entradas: own.length,
             recebido: brl(own.reduce((total, row) => total + row.amountCents, 0)),
-            reservadoImposto: brl(sum("RESERVA_IMPOSTO")),
-            reservadoCusto: brl(sum("RESERVA_CUSTO")),
-            paraCaixaDoNegocio: brl(sum("CAIXA_PROJETO")),
-            percentualImposto: formatBps(stream.taxReserveBps, 1),
-            percentualCusto: formatBps(stream.costReserveBps, 1),
           };
         }),
-      };
-    },
-  },
-
-  getCaixaNegocio: {
-    declaration: {
-      name: "getCaixaNegocio",
-      description: "Caixa do negócio (stream de negócio): saldo, quanto entrou, quanto pagou e quanto foi retirado no mês, retirado desde o início e os últimos lançamentos.",
-      parameters: object({ periodo: PERIODO }),
-    },
-    run: async (raw, context) => {
-      const args = parse(z.object({ periodo }), raw);
-      const month = monthOf(args.periodo, context.today);
-      const businesses = await getBusinessSummaries(context.userId, month);
-      return {
-        periodo: formatMonthLabel(month),
-        negocios: businesses.map((business) => ({
-          nome: business.name,
-          saldoHoje: brl(business.balanceCents),
-          entrouNoMes: brl(business.month.inCents),
-          pagoNoMes: brl(business.month.outCents),
-          retiradoNoMes: brl(business.month.withdrawnCents),
-          retiradoDesdeOInicio: brl(business.withdrawnTotalCents),
-          ultimosLancamentos: business.entries.slice(0, 10).map((entry) => ({ data: entry.date, tipo: entry.kind, descricao: entry.description, valor: brl(entry.amountCents) })),
-        })),
       };
     },
   },
@@ -319,33 +284,30 @@ export const READ_TOOLS: Record<string, ToolSpec> = {
   getProjecaoCaixa: {
     declaration: {
       name: "getProjecaoCaixa",
-      description: "Projeção do saldo pessoal mês a mês (realista e com projetos avulsos) e do caixa do negócio, com as premissas usadas e os meses negativos.",
+      description:
+        "Projeção \"se continuar assim\": o dinheiro livre de hoje (contas sem caixinhas, menos a fatura do cartão) somado à média do que sobrou por mês nos últimos 3 meses fechados, com a faixa entre o pior e o melhor mês e os meses em que o dinheiro acaba.",
       parameters: object({ meses: num("Quantos meses (1 a 12)."), scope: SCOPE, consolidated: CONSOLIDATED }),
     },
     run: async (raw, context) => {
       const args = parse(z.object({ meses: z.number().int().min(1).max(12).optional(), ...scopeArgs }), raw);
       const query = scopeOf(args, context);
-      const projection = await getProjection(context.userId, query, { refreshRecurring: false });
+      const projection = await getProjection(context.userId, query);
       const months = projection.months.slice(0, args.meses ?? 12);
-      const a = projection.assumptions;
       return {
         escopo: scopeLabel(query),
         meses: months.map((month) => ({
           mes: formatMonthLabel(month.month),
-          saldoRealista: brl(month.realisticCents),
-          saldoComProjetos: month.optimisticCents === null ? null : brl(month.optimisticCents),
-          caixaNegocio: month.businessCents === null ? null : brl(month.businessCents),
+          seContinuarAssim: brl(month.expectedCents),
+          seTodoMesForComoOPior: brl(month.lowCents),
+          seTodoMesForComoOMelhor: brl(month.highCents),
         })),
-        mesesNegativos: months.filter((month) => month.realisticCents < 0).map((month) => formatMonthLabel(month.month)),
-        premissas: {
-          comecaCom: brl(a.opening.openingCents),
-          receitasRecorrentes: a.incomes.map((item) => ({ descricao: item.label, valor: brl(item.amountCents) })),
-          despesasRecorrentes: a.expenses.map((item) => ({ descricao: item.label, valor: brl(item.amountCents) })),
-          parcelasDeCartaoQueFaltam: brl(a.installments.totalCents),
-          gastosVariaveisPorMes: a.variable.months > 0 ? brl(a.variable.monthlyCents) : "sem mês fechado ainda",
-          metasPorMes: a.goals.map((goal) => ({ meta: goal.name, valor: brl(goal.monthlyCents) })),
-          obrigacoesPorMes: a.obligations.map((item) => ({ nome: item.name, valor: brl(item.monthlyCents) })),
-          projetosAvulsosPorMes: a.projects ? brl(a.projects.monthlyCents) : null,
+        mesesNegativos: months.filter((month) => month.expectedCents < 0).map((month) => formatMonthLabel(month.month)),
+        base: {
+          livreHoje: brl(projection.opening.freeCents),
+          faturaDoCartaoEmAberto: brl(projection.opening.cardBillCents),
+          comecaCom: brl(projection.opening.openingCents),
+          mesesUsados: projection.history.map((month) => ({ mes: formatMonthLabel(month.month), entrou: brl(month.inCents), saiu: brl(month.outCents), sobrou: brl(month.netCents) })),
+          sobraMediaPorMes: projection.averageNetCents === null ? "sem mês fechado ainda" : brl(projection.averageNetCents),
         },
       };
     },

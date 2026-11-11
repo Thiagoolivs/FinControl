@@ -90,15 +90,6 @@ body {
   outline-offset: 2px;
 }
 
-/* Caixa do negócio: roxo listrado, para não depender só de tom para separar de "Reservado". */
-.texture-business {
-  background: repeating-linear-gradient(
-    135deg,
-    var(--scope-pj) 0 3px,
-    color-mix(in srgb, var(--scope-pj) 45%, var(--bg)) 3px 6px
-  );
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

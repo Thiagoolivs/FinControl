@@ -10,7 +10,6 @@ export type RuleDraft = {
   scope: "AMBOS" | "PF" | "PJ";
   categoryId: string;
   revenueStreamId: string;
-  bucketId: string;
   priority: number;
   applyRetroactively: boolean;
 };
@@ -24,18 +23,16 @@ export const EMPTY_RULE_DRAFT: RuleDraft = {
   scope: "AMBOS",
   categoryId: "",
   revenueStreamId: "",
-  bucketId: "",
   priority: 100,
   applyRetroactively: false,
 };
 
-/** Stream só vale para entradas e bucket só para saídas: o que não se aplica ao sentido é descartado. */
+/** Fonte de renda só vale para entradas: em regra só de saída, é descartada. */
 export function normalizeRuleDraft(draft: RuleDraft): RuleDraft {
   return {
     ...draft,
     pattern: draft.pattern.trim(),
     revenueStreamId: draft.direction === "SAIDA" ? "" : draft.revenueStreamId,
-    bucketId: draft.direction === "ENTRADA" ? "" : draft.bucketId,
   };
 }
 
@@ -53,12 +50,11 @@ export function validateRuleDraft(input: RuleDraft): RuleDraftErrors {
 }
 
 /**
- * Saída só é classificada por regra com categoria (o bucket diz de onde o dinheiro sai, não o que é);
- * entrada aceita stream de receita ou categoria.
+ * Saída só é classificada por regra com categoria; entrada aceita fonte de renda ou categoria.
  */
 export function ruleDestinationError(draft: Pick<RuleDraft, "direction" | "categoryId" | "revenueStreamId">): string | null {
   if (draft.categoryId) return null;
   if (draft.direction === "SAIDA") return "Regra de saída precisa de uma categoria.";
-  if (!draft.revenueStreamId) return "Escolha uma categoria ou uma stream de receita.";
+  if (!draft.revenueStreamId) return "Escolha uma categoria ou uma fonte de renda.";
   return null;
 }

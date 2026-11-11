@@ -3,7 +3,6 @@ import type { CategoryKind, MatchType, RuleDirection, RuleOrigin, Scope } from "
 import { compilePattern } from "@/lib/categorization/match";
 import { ruleDestinationError } from "@/lib/categorization/rule-draft";
 import { db } from "@/lib/db";
-import { reallocateIncome, reapplyRulePayments, refreshBucketBalances } from "@/lib/streams/ledger";
 import { unpairTransfers } from "@/lib/sync/transfers";
 import { applyRules, refreshHitCounts } from "./apply";
 
@@ -17,10 +16,9 @@ export type RuleInput = {
   matchType: MatchType;
   direction: RuleDirection;
   scope: Scope | null;
-  /** Destinos: pelo menos um. Categoria para saídas (e estornos); stream para entradas; bucket paga a saída. */
+  /** Destinos: pelo menos um. Categoria para saídas (e estornos); fonte de renda para entradas. */
   categoryId: string | null;
   revenueStreamId?: string | null;
-  bucketId?: string | null;
   priority: number;
 };
 
@@ -50,10 +48,7 @@ async function assertDestinations(userId: string, input: RuleInput): Promise<voi
   if (message) throw new RuleInputError(message);
   if (input.categoryId) await assertCategory(userId, input.categoryId);
   if (input.revenueStreamId && !(await db().revenueStream.findFirst({ where: { id: input.revenueStreamId, userId }, select: { id: true } }))) {
-    throw new RuleInputError("Stream de receita não encontrada.");
-  }
-  if (input.bucketId && !(await db().bucket.findFirst({ where: { id: input.bucketId, userId }, select: { id: true } }))) {
-    throw new RuleInputError("Bucket não encontrado.");
+    throw new RuleInputError("Fonte de renda não encontrada.");
   }
 }
 
@@ -61,9 +56,8 @@ function normalizeInput(input: RuleInput) {
   return {
     ...input,
     pattern: input.pattern.trim(),
-    // Stream só vale para entrada e bucket só para saída.
+    // Fonte de renda só vale para entrada.
     revenueStreamId: input.direction === "SAIDA" ? null : (input.revenueStreamId ?? null),
-    bucketId: input.direction === "ENTRADA" ? null : (input.bucketId ?? null),
   };
 }
 
@@ -94,7 +88,6 @@ export async function createRule(
       scope: data.scope,
       categoryId: data.categoryId,
       revenueStreamId: data.revenueStreamId,
-      bucketId: data.bucketId,
     },
     select: { id: true },
   });
@@ -128,9 +121,6 @@ export async function updateRule(userId: string, ruleId: string, input: RuleInpu
   await assertDestinations(userId, data);
   const updated = await db().rule.updateMany({ where: { id: ruleId, userId }, data });
   if (updated.count === 0) throw new RuleInputError("Regra não encontrada.");
-  // O bucket da regra pode ter mudado: refaz os pagamentos do que ela já classifica.
-  const classified = await db().transaction.findMany({ where: { userId, ruleId }, select: { id: true } });
-  await reapplyRulePayments(userId, classified.map((row) => row.id));
   return applyRules(userId, "automaticas");
 }
 
@@ -141,21 +131,12 @@ export async function updateRule(userId: string, ruleId: string, input: RuleInpu
 export async function deleteRule(userId: string, ruleId: string, returnToQueue: boolean): Promise<void> {
   const rule = await db().rule.findFirst({ where: { id: ruleId, userId }, select: { id: true } });
   if (!rule) throw new RuleInputError("Regra não encontrada.");
-  const classified = (await db().transaction.findMany({ where: { userId, ruleId }, select: { id: true } })).map((row) => row.id);
   await db().$transaction([
-    ...(returnToQueue
-      ? [
-          db().transaction.updateMany({ where: { userId, ruleId }, data: { ruleId: null, categoryId: null, revenueStreamId: null } }),
-          db().bucketEntry.deleteMany({ where: { userId, transactionId: { in: classified }, kind: { in: ["ALOCACAO", "PAGAMENTO"] } } }),
-        ]
-      : []),
+    ...(returnToQueue ? [db().transaction.updateMany({ where: { userId, ruleId }, data: { ruleId: null, categoryId: null, revenueStreamId: null } })] : []),
     db().ruleSuggestion.updateMany({ where: { userId, ruleId }, data: { ruleId: null } }),
     db().rule.delete({ where: { id: ruleId } }),
   ]);
-  if (returnToQueue) {
-    await refreshBucketBalances(userId);
-    await applyRules(userId, "sem-categoria");
-  }
+  if (returnToQueue) await applyRules(userId, "sem-categoria");
 }
 
 export async function setRuleActive(userId: string, ruleId: string, active: boolean): Promise<void> {
@@ -290,13 +271,12 @@ export async function setTransactionCategory(userId: string, transactionId: stri
   if (!transaction) throw new RuleInputError("Transação não encontrada.");
   if (categoryId && (await assertCategory(userId, categoryId)) === "RECEITA" && transaction.amountCents < 0) throw new RuleInputError(INCOME_ONLY);
   if (transaction.transferPeerId) await unpairTransfers(userId, [transactionId]);
-  // Entrada com categoria não é receita: sai da stream e as reservas dela são desfeitas.
+  // Entrada com categoria não é renda de uma fonte: sai da fonte.
   const leavesStream = categoryId !== null && transaction.revenueStreamId !== null;
   await db().transaction.update({
     where: { id: transactionId, userId },
     data: { categoryId, ruleId: null, ...(leavesStream ? { revenueStreamId: null } : {}) },
   });
-  if (leavesStream) await reallocateIncome(userId, [transactionId]);
   await refreshHitCounts(userId);
 }
 
@@ -304,10 +284,6 @@ export async function setTransactionCategory(userId: string, transactionId: stri
 export async function setTransactionIgnored(userId: string, transactionId: string, isIgnored: boolean): Promise<void> {
   const updated = await db().transaction.updateMany({ where: { id: transactionId, userId }, data: { isIgnored } });
   if (updated.count === 0) throw new RuleInputError("Transação não encontrada.");
-  // Ignorada também não reserva nem consome bucket; voltar refaz o que a stream e a regra mandam.
-  if (isIgnored) await db().bucketEntry.deleteMany({ where: { userId, transactionId, kind: "PAGAMENTO" } });
-  else await reapplyRulePayments(userId, [transactionId]);
-  await reallocateIncome(userId, [transactionId]);
 }
 
 // ─── Categorias ─────────────────────────────────────────────────────────

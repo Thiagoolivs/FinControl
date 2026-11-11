@@ -105,7 +105,7 @@ export function NotificationSettings({ publicKey }: { publicKey: string | null }
     <div className="flex flex-col gap-3">
       <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
         Chega notificação só dos alertas com push ligado em Alertas, logo abaixo. Por padrão: conexão com erro, saldo projetado
-        negativo, reserva de imposto baixa e teto do MEI. Vários alertas de uma leitura viram uma notificação só.
+        acabando e teto do MEI. Vários alertas de uma leitura viram uma notificação só.
       </p>
       {endpoint ? (
         <>

@@ -187,7 +187,7 @@ function BackLink() {
   );
 }
 
-/** Saídas sem categoria × entradas sem stream. */
+/** Saídas sem categoria × entradas sem fonte de renda. */
 function KindTabs({ current, outflows, inflows }: { current: "saidas" | "entradas"; outflows: number; inflows: number }) {
   return (
     <nav aria-label="Tipo" className="flex gap-6">

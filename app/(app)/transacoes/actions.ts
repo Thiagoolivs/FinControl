@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { describeRuleError } from "@/lib/rules/action-error";
 import { acceptAllSuggestions, categorizeGroup, ignoreSuggestion, setTransactionCategory, setTransactionIgnored } from "@/lib/rules/mutations";
 import { suggestWithAi } from "@/lib/rules/suggest";
-import { assignStreamToGroup, createStream, setTransactionBucket, setTransactionStream } from "@/lib/streams/mutations";
+import { assignStreamToGroup, createStream, setTransactionStream } from "@/lib/streams/mutations";
 import { createRateLimiter } from "@/lib/security/rate-limit";
 import type { ActionState } from "../actions";
 
@@ -115,7 +115,6 @@ const streamGroupInput = z
     newStream: z
       .object({
         name: z.string().trim().min(1, "Dê um nome à fonte de receita.").max(60),
-        type: z.enum(["SALARIO_FIXO", "PROJETO", "VENTURE", "OUTRO"]),
         scope: z.enum(["PF", "PJ"]),
       })
       .nullable()
@@ -124,7 +123,7 @@ const streamGroupInput = z
     pattern: z.string().max(200),
     matchType: z.enum(["PREFIX", "CONTAINS", "REGEX"]),
   })
-  .refine((input) => input.revenueStreamId !== null || input.newStream !== null, "Escolha a stream de receita.");
+  .refine((input) => input.revenueStreamId !== null || input.newStream !== null, "Escolha a fonte de renda.");
 
 export async function assignStreamGroupAction(input: z.input<typeof streamGroupInput>): Promise<ActionState> {
   const user = await requireUser();
@@ -132,14 +131,14 @@ export async function assignStreamGroupAction(input: z.input<typeof streamGroupI
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   const data = parsed.data;
   try {
-    const revenueStreamId = data.revenueStreamId ?? (data.newStream ? await createStream(user.id, data.newStream) : "");
+    const revenueStreamId = data.revenueStreamId ?? (data.newStream ? await createStream(user.id, { ...data.newStream, type: "OUTRO" }) : "");
     await assignStreamToGroup(user.id, {
       transactionIds: data.transactionIds,
       revenueStreamId,
       rule: data.createRule ? { pattern: data.pattern, matchType: data.matchType } : null,
     });
     revalidatePath("/", "layout");
-    return { notice: "Receita atribuída; reservas lançadas." };
+    return { notice: "Fonte de renda atribuída." };
   } catch (error) {
     return { error: describeRuleError(error) };
   }
@@ -150,18 +149,7 @@ export async function setStreamAction(input: { transactionId: string; revenueStr
   try {
     await setTransactionStream(user.id, input.transactionId, input.revenueStreamId || null);
     revalidatePath("/", "layout");
-    return { notice: input.revenueStreamId ? "Stream salva; reservas lançadas." : "Voltou para a fila de revisão." };
-  } catch (error) {
-    return { error: describeRuleError(error) };
-  }
-}
-
-export async function setBucketAction(input: { transactionId: string; bucketId: string | null }): Promise<ActionState> {
-  const user = await requireUser();
-  try {
-    await setTransactionBucket(user.id, input.transactionId, input.bucketId || null);
-    revalidatePath("/", "layout");
-    return { notice: input.bucketId ? "Saída lançada no bucket." : "Não sai mais de bucket." };
+    return { notice: input.revenueStreamId ? "Fonte de renda salva." : "Voltou para a fila de revisão." };
   } catch (error) {
     return { error: describeRuleError(error) };
   }

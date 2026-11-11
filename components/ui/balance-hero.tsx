@@ -27,7 +27,7 @@ type BalanceHeroProps = {
 export function BalanceHero({
   amountCents,
   scope,
-  label = "Disponível",
+  label = "Você tem",
   caption,
   status = "ready",
   composition,
@@ -79,22 +79,22 @@ export function BalanceHero({
 }
 
 export type CompositionSegment = {
-  key: "disponivel" | "guardado" | "reservado" | "negocio";
+  key: "pessoal" | "guardado" | "empresa";
   label: string;
   cents: number;
   href?: string;
 };
 
 const SEGMENT_FILL: Record<CompositionSegment["key"], string> = {
-  disponivel: "bg-text-primary",
+  pessoal: "bg-text-primary",
   guardado: "bg-positive",
-  reservado: "bg-scope-pj",
-  negocio: "texture-business",
+  empresa: "bg-scope-pj",
 };
 
 type BalanceCompositionProps = {
   segments: CompositionSegment[];
-  total: { label: string; cents: number; href?: string };
+  /** Atalho para ver conta por conta. */
+  link?: { label: string; href: string };
 };
 
 function SegmentLink({ href, children }: { href?: string; children: ReactNode }) {
@@ -109,50 +109,48 @@ function SegmentLink({ href, children }: { href?: string; children: ReactNode })
 }
 
 /**
- * Saldo bruto dividido em Disponível / Guardado / Reservado / Caixa do negócio. O disponível já é o número
- * grande: a legenda (duas colunas) mostra só o que sai dele, e o que é zero some. Sem nada separado, sobra
- * só o atalho para as contas, sem repetir o mesmo valor.
+ * De onde é o dinheiro: pessoal (PF), guardado (caixinhas) e empresa (PJ). Barra e legenda só aparecem
+ * quando há mais de uma parte; com uma só, o número grande já diz tudo.
  */
-export function BalanceComposition({ segments, total }: BalanceCompositionProps) {
-  const visible = segments.filter((segment) => segment.cents > 0);
-  const visibleTotal = visible.reduce((sum, segment) => sum + segment.cents, 0);
-  const others = segments.filter((segment) => segment.key !== "disponivel" && segment.cents !== 0);
-  const available = segments.find((segment) => segment.key === "disponivel")?.cents ?? total.cents;
-  const sameAsAvailable = total.cents === available;
+export function BalanceComposition({ segments, link }: BalanceCompositionProps) {
+  const visible = segments.filter((segment) => segment.cents !== 0);
+  const positive = visible.filter((segment) => segment.cents > 0);
+  const positiveTotal = positive.reduce((sum, segment) => sum + segment.cents, 0);
+  const split = visible.length > 1;
 
   return (
     <div className="mt-4 flex flex-col">
-      {others.length > 0 && visible.length > 1 ? (
-        <div aria-hidden="true" className="flex h-3 gap-0.5">
-          {visible.map((segment) => (
+      {split && positive.length > 1 ? (
+        <div aria-hidden="true" className="flex h-2.5 gap-0.5">
+          {positive.map((segment) => (
             <div
               key={segment.key}
               className={cn("min-w-1.5 rounded-[4px]", SEGMENT_FILL[segment.key])}
-              style={{ flexGrow: shareBps(segment.cents, visibleTotal), flexBasis: 0 }}
+              style={{ flexGrow: shareBps(segment.cents, positiveTotal), flexBasis: 0 }}
             />
           ))}
         </div>
       ) : null}
-      {others.length > 0 ? (
-        <ul className="m-0 mt-4 grid list-none grid-cols-2 gap-x-6 gap-y-3 p-0">
-          {others.map((segment) => (
+      {split ? (
+        <ul className="m-0 mt-4 grid list-none grid-cols-3 gap-x-4 gap-y-3 p-0">
+          {visible.map((segment) => (
             <li key={segment.key} className="min-w-0">
               <SegmentLink href={segment.href}>
-                <span className="flex items-center gap-2 text-[13px] text-text-secondary">
+                <span className="flex items-center gap-1.5 text-[13px] text-text-secondary">
                   <span aria-hidden="true" className={cn("size-2 shrink-0 rounded-full", SEGMENT_FILL[segment.key])} />
                   <span className="truncate">{segment.label}</span>
-                  {segment.key === "reservado" || segment.key === "negocio" ? <ScopeTag scope="PJ" /> : null}
                 </span>
-                <Money cents={segment.cents} className={cn("pl-4 text-[16px]", segment.cents < 0 && "text-negative")} />
+                <Money cents={segment.cents} hideZeroCents className={cn("text-[16px]", segment.cents < 0 && "text-negative")} />
               </SegmentLink>
             </li>
           ))}
         </ul>
       ) : null}
-      <RowLink href={total.href} className={others.length > 0 ? "mt-3" : undefined}>
-        <span className="flex-1 text-[15px] text-text-secondary">{sameAsAvailable ? "Ver conta por conta" : total.label}</span>
-        {sameAsAvailable ? null : <Money cents={total.cents} className="text-[15px]" />}
-      </RowLink>
+      {link ? (
+        <RowLink href={link.href} className={split ? "mt-3" : undefined}>
+          <span className="flex-1 text-[15px] text-text-secondary">{link.label}</span>
+        </RowLink>
+      ) : null}
     </div>
   );
 }

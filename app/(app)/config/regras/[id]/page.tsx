@@ -36,7 +36,6 @@ export default async function EditRulePage({ params }: PageProps<"/config/regras
         ruleId={rule.id}
         categories={categoryOptions(tree)}
         streams={options.streams}
-        buckets={options.buckets}
         sampleDescription={sample?.descriptionRaw}
         initialValue={{
           pattern: rule.pattern,
@@ -45,7 +44,6 @@ export default async function EditRulePage({ params }: PageProps<"/config/regras
           scope: rule.scope ?? "AMBOS",
           categoryId: rule.categoryId ?? "",
           revenueStreamId: rule.revenueStreamId ?? "",
-          bucketId: rule.bucketId ?? "",
           priority: rule.priority,
         }}
       />

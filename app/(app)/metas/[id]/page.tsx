@@ -38,12 +38,12 @@ export default async function GoalPage({ params }: PageProps<"/metas/[id]">) {
             de <Money cents={goal.targetCents} hideZeroCents /> até {monthLabel(goal.targetMonth)} · {formatBps(progressBps(goal.currentCents, goal.targetCents))}
           </p>
         ) : (
-          <p className="m-0 text-[15px] text-accent">Defina o valor e a data abaixo para a meta entrar na projeção.</p>
+          <p className="m-0 text-[15px] text-accent">Defina o valor e a data abaixo para saber quanto guardar por mês.</p>
         )}
       </section>
 
       {goal.progress === "concluida" ? <p className="m-0 text-[15px] text-positive">Meta atingida.</p> : null}
-      {goal.progress === "pausada" ? <p className="m-0 text-[15px] text-text-secondary">Pausada: não pede aporte nem entra na projeção.</p> : null}
+      {goal.progress === "pausada" ? <p className="m-0 text-[15px] text-text-secondary">Pausada: não pede aporte.</p> : null}
       {running ? (
         <section className="flex flex-col gap-2">
           {goal.progress === "atrasada" ? (

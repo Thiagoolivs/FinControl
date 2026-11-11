@@ -13,8 +13,8 @@ export function recurringKey(amountCents: number, descriptionClean: string): str
 
 /**
  * Detecta as séries recorrentes (receitas e despesas) e grava em RecurringSeries, ligando as transações.
- * Fica de fora: transferência, ignorada, parcela de cartão, saída paga com bucket (o DAS sai da reserva),
- * entrada com categoria de gasto (estorno não é receita) e entrada de projeto ou do negócio (não são fixas).
+ * Fica de fora: transferência, ignorada, parcela de cartão, entrada com categoria de gasto (estorno não é
+ * renda) e entrada de projeto ou do negócio (não são fixas).
  * Entrada com categoria de entrada (rendimento, reembolso fixo…) entra.
  * Detecta por escopo: PF e PJ nunca viram a mesma série.
  */
@@ -39,11 +39,10 @@ export async function refreshRecurringSeries(userId: string, today: string = tod
       revenueStreamId: true,
       installmentTotal: true,
       revenueStream: { select: { type: true } },
-      bucketEntries: { where: { kind: "PAGAMENTO" }, select: { id: true } },
     },
   });
   const eligible = rows.filter((row) => {
-    if ((row.installmentTotal ?? 0) > 1 || row.bucketEntries.length > 0) return false;
+    if ((row.installmentTotal ?? 0) > 1) return false;
     if (row.amountCents < 0) return true;
     if (row.category) return row.category.kind === "RECEITA";
     return row.revenueStream?.type !== "PROJETO" && row.revenueStream?.type !== "VENTURE";

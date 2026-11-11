@@ -50,10 +50,10 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
             <div className="mt-2 flex flex-col">
               <StatRow label="Saldo que o banco informa" valueCents={bankSaysCents} />
               {balance.autoInvestedCents > 0 ? (
-                <StatRow label="Aplicação automática" valueCents={balance.autoInvestedCents} hint="O banco resgata sozinho quando precisa: conta como disponível." />
+                <StatRow label="Aplicação automática" valueCents={balance.autoInvestedCents} hint="O banco resgata sozinho quando precisa: conta como dinheiro seu." />
               ) : null}
               {balance.savedCents > 0 ? (
-                <StatRow label="Guardado em caixinhas" valueCents={balance.savedCents} hint="Dinheiro separado por você: fica fora do disponível." />
+                <StatRow label="Guardado em caixinhas" valueCents={balance.savedCents} hint="Dinheiro separado por você dentro da conta." />
               ) : null}
             </div>
           ) : undefined
@@ -118,8 +118,8 @@ export default async function AccountsPage({ searchParams }: PageProps<"/contas"
             .
           </Reason>
           <Reason title="Filtro PF / PJ">Com PF ou PJ escolhido no topo, as contas do outro lado ficam de fora. Escolha Tudo para ver todas.</Reason>
-          <Reason title="Disponível não é o saldo">
-            O número grande da tela Hoje é o disponível: saldo das contas menos caixinhas, reservas de imposto e custo e o caixa do negócio.
+          <Reason title="Aplicação automática e caixinhas">
+            O número grande da tela Hoje soma o saldo das contas, a aplicação automática e as caixinhas. Muitos bancos mostram só o saldo da conta.
           </Reason>
           <Reason title="Conta que não deveria contar">Desligue &quot;Somar no saldo&quot; na conta (ex.: conta conjunta, conta antiga).</Reason>
         </ol>

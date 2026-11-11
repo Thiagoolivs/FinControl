@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Eyebrow } from "@/components/ui/text";
 import type { ActionState } from "../../actions";
-import { setBucketAction, setCategoryAction, setIgnoredAction, setStreamAction } from "../actions";
+import { setCategoryAction, setIgnoredAction, setStreamAction } from "../actions";
 
 function Feedback({ state }: { state: ActionState }) {
   if (state.error) return <p role="alert" className="m-0 text-[13px] text-negative">{state.error}</p>;
@@ -101,23 +101,11 @@ function DestinationSelect({
 export function StreamSelect({ transactionId, revenueStreamId, options }: { transactionId: string; revenueStreamId: string | null; options: { id: string; name: string }[] }) {
   return (
     <DestinationSelect
-      label="Stream de receita"
+      label="Fonte de renda"
       value={revenueStreamId}
-      emptyLabel="Sem stream"
+      emptyLabel="Sem fonte de renda"
       options={options}
       onSave={(value) => setStreamAction({ transactionId, revenueStreamId: value })}
-    />
-  );
-}
-
-export function BucketSelect({ transactionId, bucketId, options }: { transactionId: string; bucketId: string | null; options: { id: string; name: string }[] }) {
-  return (
-    <DestinationSelect
-      label="Pago com"
-      value={bucketId}
-      emptyLabel="Disponível (não sai de bucket)"
-      options={options}
-      onSave={(value) => setBucketAction({ transactionId, bucketId: value })}
     />
   );
 }

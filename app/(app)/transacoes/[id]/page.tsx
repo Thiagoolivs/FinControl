@@ -10,7 +10,7 @@ import { categoryOptions, getCategoryTree } from "@/lib/rules/categories";
 import { destinationOptions, prepareStreams } from "@/lib/streams/queries";
 import { PAGE_CLASS } from "../../page-header";
 import { isTransferRow } from "../../transaction-groups";
-import { BucketSelect, CategorySelect, IgnoreSwitch, StreamSelect, UnpairButton } from "./controls";
+import { CategorySelect, IgnoreSwitch, StreamSelect, UnpairButton } from "./controls";
 
 export default async function TransactionPage({ params }: PageProps<"/transacoes/[id]">) {
   const user = await requireUser();
@@ -22,7 +22,6 @@ export default async function TransactionPage({ params }: PageProps<"/transacoes
       category: { select: { kind: true } },
       rule: { select: { id: true, pattern: true } },
       revenueStream: { select: { name: true, type: true } },
-      bucketEntries: { select: { id: true, kind: true, amountCents: true, bucketId: true, bucket: { select: { name: true } } } },
       transferPeer: { select: { date: true, amountCents: true, account: { select: { name: true } } } },
     },
   });
@@ -32,9 +31,6 @@ export default async function TransactionPage({ params }: PageProps<"/transacoes
   const today = todayLocal();
   const transfer = isTransferRow(transaction);
   const inflow = transaction.amountCents > 0;
-  const allocations = transaction.bucketEntries.filter((entry) => entry.kind === "ALOCACAO");
-  const payment = transaction.bucketEntries.find((entry) => entry.kind === "PAGAMENTO") ?? null;
-  const allocatedCents = allocations.reduce((sum, entry) => sum + entry.amountCents, 0);
 
   return (
     <main className={PAGE_CLASS}>
@@ -73,34 +69,19 @@ export default async function TransactionPage({ params }: PageProps<"/transacoes
           <Eyebrow as="h2">Transferência entre suas contas</Eyebrow>
           <p className="m-0 text-[15px] leading-[21px] text-text-secondary">
             A outra perna está em {transaction.transferPeer.account.name}, {formatDayLabel(fromDbDate(transaction.transferPeer.date), today).toLowerCase()}. Por
-            isso não conta como gasto nem como receita.
+            isso não conta como gasto nem como renda.
           </p>
           <UnpairButton transactionId={transaction.id} />
         </section>
       ) : null}
 
       {!transfer && inflow ? (
-        <section aria-label="Fonte de receita" className="flex flex-col gap-2">
-          <Eyebrow as="h2">Fonte de receita</Eyebrow>
+        <section aria-label="Fonte de renda" className="flex flex-col gap-2">
+          <Eyebrow as="h2">Fonte de renda</Eyebrow>
           <StreamSelect transactionId={transaction.id} revenueStreamId={transaction.revenueStreamId} options={destinations.streams} />
-          {transaction.revenueStreamId ? (
-            <ul className="m-0 flex list-none flex-col p-0">
-              {allocations.map((entry) => (
-                <li key={entry.id} className="flex min-h-11 items-center gap-3 text-[15px]">
-                  <span className="flex-1 text-text-secondary">Para {entry.bucket.name}</span>
-                  <Money cents={entry.amountCents} />
-                </li>
-              ))}
-              {transaction.revenueStream?.type !== "VENTURE" ? (
-                <li className="flex min-h-11 items-center gap-3 text-[15px]">
-                  <span className="flex-1 text-text-secondary">Disponível</span>
-                  <Money cents={transaction.amountCents - allocatedCents} />
-                </li>
-              ) : null}
-            </ul>
-          ) : (
+          {transaction.revenueStreamId ? null : (
             <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
-              {transaction.categoryId ? "Com categoria: não conta como receita." : "Sem stream nem categoria: está na fila de revisão."}
+              {transaction.categoryId ? "Com categoria: entra como estorno ou outra entrada." : "Sem fonte nem categoria: está na fila de revisão."}
             </p>
           )}
         </section>
@@ -131,15 +112,6 @@ export default async function TransactionPage({ params }: PageProps<"/transacoes
         </section>
       )}
 
-      {!transfer && !inflow ? (
-        <section aria-label="Pago com" className="flex flex-col gap-2">
-          <Eyebrow as="h2">Pago com</Eyebrow>
-          <BucketSelect transactionId={transaction.id} bucketId={payment?.bucketId ?? null} options={destinations.buckets} />
-          <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
-            Quando a saída usa dinheiro reservado (ex.: DAS pago com a reserva de imposto), ela sai do bucket e não do disponível.
-          </p>
-        </section>
-      ) : null}
 
       <IgnoreSwitch transactionId={transaction.id} ignored={transaction.isIgnored} />
     </main>

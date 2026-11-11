@@ -1,7 +1,6 @@
 import "server-only";
 import { compileRules, pickRule } from "@/lib/categorization/engine";
 import { db } from "@/lib/db";
-import { reallocateIncome, reapplyRulePayments } from "@/lib/streams/ledger";
 
 export type ApplyMode =
   /** Só o que ainda não foi classificado (rodado depois de cada sync e ao criar regra). */
@@ -12,9 +11,9 @@ export type ApplyMode =
 type Target = { ruleId: string | null; categoryId: string | null; revenueStreamId: string | null };
 
 /**
- * Passa as regras ativas pelas transações candidatas. Saída recebe categoria (e, se a regra apontar,
- * paga com um bucket). Entrada recebe stream de receita (ou categoria, quando é estorno). Transferência
- * pareada e transação ignorada nunca entram. Devolve quantas mudaram.
+ * Passa as regras ativas pelas transações candidatas. Saída recebe categoria. Entrada recebe fonte de renda
+ * (ou categoria: entrada ou estorno). Transferência pareada e transação ignorada nunca entram. Devolve
+ * quantas mudaram.
  */
 export async function applyRules(userId: string, mode: ApplyMode): Promise<number> {
   const rules = await db().rule.findMany({
@@ -52,10 +51,7 @@ export async function applyRules(userId: string, mode: ApplyMode): Promise<numbe
     entry.ids.push(id);
     updates.set(key, entry);
   };
-  const touchedIn: string[] = [];
-  const touchedOut: string[] = [];
-  // Saída que deixa de ser da regra perde o pagamento que a regra lançou (o manual nunca tem ruleId).
-  const unruledOut: string[] = [];
+  let changed = 0;
   for (const transaction of candidates) {
     const inflow = transaction.amountCents > 0;
     const rule = pickRule(inflow ? inRules : outRules, transaction);
@@ -74,19 +70,12 @@ export async function applyRules(userId: string, mode: ApplyMode): Promise<numbe
       continue;
     }
     add(target, transaction.id);
-    (inflow ? touchedIn : touchedOut).push(transaction.id);
-    if (!inflow && transaction.ruleId && target.ruleId !== transaction.ruleId) unruledOut.push(transaction.id);
+    changed += 1;
   }
 
-  await db().$transaction([
-    ...[...updates.values()].map(({ data, ids }) => db().transaction.updateMany({ where: { userId, id: { in: ids } }, data })),
-    db().bucketEntry.deleteMany({ where: { userId, kind: "PAGAMENTO", transactionId: { in: unruledOut } } }),
-  ]);
-  const changed = touchedIn.length + touchedOut.length;
+  await db().$transaction([...updates.values()].map(({ data, ids }) => db().transaction.updateMany({ where: { userId, id: { in: ids } }, data })));
   if (changed > 0) {
     await refreshHitCounts(userId, [...new Set([...updates.values()].map(({ data }) => data.ruleId).filter((id): id is string => id !== null))]);
-    await reallocateIncome(userId, touchedIn);
-    await reapplyRulePayments(userId, touchedOut);
   }
   return changed;
 }

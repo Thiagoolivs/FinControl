@@ -21,7 +21,6 @@ type Option = { id: string; name: string };
 type RuleEditorProps = {
   categories: Option[];
   streams: Option[];
-  buckets: Option[];
   initialValue?: Partial<RuleDraft>;
   /** Descrição real que originou a regra: preenche o campo de teste. */
   sampleDescription?: string;
@@ -53,7 +52,6 @@ const SCOPE_OPTIONS: readonly SegmentOption<RuleDraft["scope"]>[] = [
 export function RuleEditor({
   categories,
   streams,
-  buckets,
   initialValue,
   sampleDescription = "",
   submitError,
@@ -65,7 +63,7 @@ export function RuleEditor({
   const [errors, setErrors] = useState<RuleDraftErrors>({});
   const [sample, setSample] = useState(sampleDescription);
   const [isPending, startTransition] = useTransition();
-  const ids = { pattern: useId(), sample: useId(), category: useId(), stream: useId(), bucket: useId(), priority: useId(), retro: useId() };
+  const ids = { pattern: useId(), sample: useId(), category: useId(), stream: useId(), priority: useId(), retro: useId() };
 
   const update = <K extends keyof RuleDraft>(key: K, value: RuleDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const compiled = compilePattern(draft.pattern, draft.matchType);
@@ -114,10 +112,7 @@ export function RuleEditor({
       <div className="flex flex-col gap-4">
         <SelectField id={ids.category} label="Categoria" value={draft.categoryId} options={categories} onChange={(value) => update("categoryId", value)} />
         {draft.direction !== "SAIDA" && streams.length > 0 ? (
-          <SelectField id={ids.stream} label="Stream de receita" value={draft.revenueStreamId} options={streams} onChange={(value) => update("revenueStreamId", value)} />
-        ) : null}
-        {draft.direction !== "ENTRADA" && buckets.length > 0 ? (
-          <SelectField id={ids.bucket} label="Sai do bucket" value={draft.bucketId} options={buckets} onChange={(value) => update("bucketId", value)} />
+          <SelectField id={ids.stream} label="Fonte de renda" value={draft.revenueStreamId} options={streams} onChange={(value) => update("revenueStreamId", value)} />
         ) : null}
         {errors.destination ? <FieldError>{errors.destination}</FieldError> : null}
       </div>

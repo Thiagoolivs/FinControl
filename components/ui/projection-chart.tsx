@@ -29,12 +29,11 @@ export type ProjectionMonth = {
   label: string;
   /** Rótulo completo para tooltip e tabela: "novembro de 2026". */
   fullLabel: string;
-  /** Saldo pessoal projetado sem projetos avulsos. */
-  realisticCents: number;
-  /** Mesmo saldo contando a média de projetos avulsos; vira a faixa otimista. */
-  optimisticCents: number | null;
-  /** Caixa do negócio, em linha separada. */
-  businessCents: number | null;
+  /** Se continuar como nos últimos meses (média). */
+  expectedCents: number;
+  /** Faixa: todo mês igual ao pior e ao melhor mês recente. */
+  lowCents: number;
+  highCents: number;
 };
 
 type ProjectionChartProps = {
@@ -85,24 +84,17 @@ export function ProjectionChart({ months, title = "Próximos 12 meses", status =
 }
 
 function Legend({ months }: { months: ProjectionMonth[] }) {
-  const hasOptimistic = months.some((month) => month.optimisticCents !== null);
-  const hasBusiness = months.some((month) => month.businessCents !== null);
+  const hasRange = months.some((month) => month.lowCents !== month.highCents);
   return (
     <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-[13px] text-text-secondary">
       <li className="flex items-center gap-2">
         <span aria-hidden="true" className="h-0.5 w-3.5 rounded-full bg-text-primary" />
-        Pessoal
+        Se continuar assim
       </li>
-      {hasOptimistic ? (
+      {hasRange ? (
         <li className="flex items-center gap-2">
           <span aria-hidden="true" className="h-2 w-3.5 rounded-sm bg-text-primary/15" />
-          Com projetos avulsos
-        </li>
-      ) : null}
-      {hasBusiness ? (
-        <li className="flex items-center gap-2">
-          <span aria-hidden="true" className="h-0.5 w-3.5 rounded-full bg-scope-pj" />
-          Negócio
+          Entre o pior e o melhor mês
         </li>
       ) : null}
     </ul>
@@ -145,11 +137,7 @@ function Chart({ months }: { months: ProjectionMonth[] }) {
   const [active, setActive] = useState<number | null>(null);
   const clipId = useId();
 
-  const values = months.flatMap((month) => [
-    month.realisticCents,
-    month.optimisticCents ?? month.realisticCents,
-    month.businessCents ?? month.realisticCents,
-  ]);
+  const values = months.flatMap((month) => [month.expectedCents, month.lowCents, month.highCents]);
   const ticks = niceTicks(Math.min(...values), Math.max(...values), 4);
   const yMin = ticks[0] ?? 0;
   const yMax = ticks.at(-1) ?? 0;
@@ -161,18 +149,17 @@ function Chart({ months }: { months: ProjectionMonth[] }) {
   const lastIndex = months.length - 1;
   const labelEvery = step < 30 ? 2 : 1;
 
-  const realistic = pathFrom(months.map((month, index) => [x(index), y(month.realisticCents)]));
-  const business = pathFrom(months.map((month, index) => (month.businessCents === null ? null : [x(index), y(month.businessCents)])));
-  const hasOptimistic = months.some((month) => month.optimisticCents !== null);
-  const band = hasOptimistic
-    ? `${pathFrom(months.map((month, index) => [x(index), y(month.optimisticCents ?? month.realisticCents)]))}${months
-        .map((month, index) => [x(index), y(month.realisticCents)] as const)
+  const expected = pathFrom(months.map((month, index) => [x(index), y(month.expectedCents)]));
+  const hasRange = months.some((month) => month.lowCents !== month.highCents);
+  const band = hasRange
+    ? `${pathFrom(months.map((month, index) => [x(index), y(month.highCents)]))}${months
+        .map((month, index) => [x(index), y(month.lowCents)] as const)
         .reverse()
         .map(([px, py]) => `L${px.toFixed(1)},${py.toFixed(1)}`)
         .join("")}Z`
     : null;
-  const belowZero = `M${x(0)},${zeroY}${months.map((month, index) => `L${x(index).toFixed(1)},${y(month.realisticCents).toFixed(1)}`).join("")}L${x(lastIndex)},${zeroY}Z`;
-  const hasNegative = months.some((month) => month.realisticCents < 0);
+  const belowZero = `M${x(0)},${zeroY}${months.map((month, index) => `L${x(index).toFixed(1)},${y(month.expectedCents).toFixed(1)}`).join("")}L${x(lastIndex)},${zeroY}Z`;
+  const hasNegative = months.some((month) => month.expectedCents < 0);
 
   function indexAt(clientX: number, target: Element): number {
     const left = target.getBoundingClientRect().left;
@@ -201,7 +188,7 @@ function Chart({ months }: { months: ProjectionMonth[] }) {
   const last = months[lastIndex];
   const summary =
     first && last
-      ? `Saldo pessoal projetado de ${formatCents(first.realisticCents)} em ${first.fullLabel} para ${formatCents(last.realisticCents)} em ${last.fullLabel}. Use as setas para percorrer os meses.`
+      ? `Se continuar assim: ${formatCents(first.expectedCents)} em ${first.fullLabel} e ${formatCents(last.expectedCents)} em ${last.fullLabel}. Use as setas para percorrer os meses.`
       : "";
   const activeMonth = active === null ? undefined : months[active];
 
@@ -262,22 +249,18 @@ function Chart({ months }: { months: ProjectionMonth[] }) {
 
         {band ? <path d={band} className="fill-text-primary/10" /> : null}
         {hasNegative ? <path d={belowZero} clipPath={`url(#${clipId})`} className="fill-negative/15" /> : null}
-        {business ? <path d={business} fill="none" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="stroke-scope-pj" /> : null}
-        <path d={realistic} fill="none" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="stroke-text-primary" />
+        <path d={expected} fill="none" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="stroke-text-primary" />
 
         {months.map((month, index) =>
-          month.realisticCents < 0 ? (
-            <circle key={month.key} cx={x(index)} cy={y(month.realisticCents)} r={4} strokeWidth={2} className="fill-negative stroke-bg" />
+          month.expectedCents < 0 ? (
+            <circle key={month.key} cx={x(index)} cy={y(month.expectedCents)} r={4} strokeWidth={2} className="fill-negative stroke-bg" />
           ) : null,
         )}
 
         {activeMonth && active !== null ? (
           <g>
             <line x1={x(active)} x2={x(active)} y1={PAD_TOP} y2={PAD_TOP + PLOT_HEIGHT} strokeWidth={1} className="stroke-text-secondary" />
-            <circle cx={x(active)} cy={y(activeMonth.realisticCents)} r={4.5} strokeWidth={2} className="fill-text-primary stroke-bg" />
-            {activeMonth.businessCents !== null ? (
-              <circle cx={x(active)} cy={y(activeMonth.businessCents)} r={4.5} strokeWidth={2} className="fill-scope-pj stroke-bg" />
-            ) : null}
+            <circle cx={x(active)} cy={y(activeMonth.expectedCents)} r={4.5} strokeWidth={2} className="fill-text-primary stroke-bg" />
           </g>
         ) : null}
       </svg>
@@ -298,11 +281,13 @@ function Tooltip({ month, side }: { month: ProjectionMonth; side: "left" | "righ
       style={side === "left" ? { left: PAD_LEFT } : { right: 0 }}
     >
       <span className="text-[12px] text-text-secondary">{month.fullLabel}</span>
-      <TooltipRow keyClass="bg-text-primary" label="Pessoal" cents={month.realisticCents} />
-      {month.optimisticCents !== null ? (
-        <TooltipRow keyClass="bg-text-primary/30" label="Com projetos" cents={month.optimisticCents} />
+      <TooltipRow keyClass="bg-text-primary" label="Se continuar assim" cents={month.expectedCents} />
+      {month.lowCents !== month.highCents ? (
+        <>
+          <TooltipRow keyClass="bg-text-primary/30" label="Se todo mês for como o pior" cents={month.lowCents} />
+          <TooltipRow keyClass="bg-text-primary/30" label="Se todo mês for como o melhor" cents={month.highCents} />
+        </>
       ) : null}
-      {month.businessCents !== null ? <TooltipRow keyClass="bg-scope-pj" label="Negócio" cents={month.businessCents} /> : null}
     </div>
   );
 }
@@ -320,29 +305,26 @@ function TooltipRow({ keyClass, label, cents }: { keyClass: string; label: strin
 
 function ProjectionTable({ months }: { months: ProjectionMonth[] }) {
   const { formatCents } = useFormat();
-  const hasOptimistic = months.some((month) => month.optimisticCents !== null);
-  const hasBusiness = months.some((month) => month.businessCents !== null);
-  const cell = (cents: number | null) =>
-    cents === null ? "—" : <span className={cn(cents < 0 && "text-negative")}>{formatCents(cents)}</span>;
+  const cell = (cents: number) => <span className={cn(cents < 0 && "text-negative")}>{formatCents(cents)}</span>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-[13px] tabular-nums">
-        <caption className="sr-only">Projeção de saldo mês a mês</caption>
+        <caption className="sr-only">Projeção mês a mês</caption>
         <thead>
           <tr className="text-text-secondary">
             <th scope="col" className="py-2 pr-4 font-medium">Mês</th>
-            <th scope="col" className="py-2 pr-4 text-right font-medium">Pessoal</th>
-            {hasOptimistic ? <th scope="col" className="py-2 pr-4 text-right font-medium">Com projetos</th> : null}
-            {hasBusiness ? <th scope="col" className="py-2 text-right font-medium">Negócio</th> : null}
+            <th scope="col" className="py-2 pr-4 text-right font-medium">Se continuar assim</th>
+            <th scope="col" className="py-2 pr-4 text-right font-medium">Pior</th>
+            <th scope="col" className="py-2 text-right font-medium">Melhor</th>
           </tr>
         </thead>
         <tbody>
           {months.map((month) => (
             <tr key={month.key}>
               <th scope="row" className="whitespace-nowrap py-1.5 pr-4 font-normal text-text-secondary">{month.label}</th>
-              <td className="whitespace-nowrap py-1.5 pr-4 text-right">{cell(month.realisticCents)}</td>
-              {hasOptimistic ? <td className="whitespace-nowrap py-1.5 pr-4 text-right">{cell(month.optimisticCents)}</td> : null}
-              {hasBusiness ? <td className="whitespace-nowrap py-1.5 text-right">{cell(month.businessCents)}</td> : null}
+              <td className="whitespace-nowrap py-1.5 pr-4 text-right">{cell(month.expectedCents)}</td>
+              <td className="whitespace-nowrap py-1.5 pr-4 text-right">{cell(month.lowCents)}</td>
+              <td className="whitespace-nowrap py-1.5 text-right">{cell(month.highCents)}</td>
             </tr>
           ))}
         </tbody>
@@ -352,15 +334,13 @@ function ProjectionTable({ months }: { months: ProjectionMonth[] }) {
 }
 
 function NegativeSummary({ months }: { months: ProjectionMonth[] }) {
-  const negative = months.filter((month) => month.realisticCents < 0);
-  if (negative.length === 0) return null;
-  const names = negative.map((month) => month.fullLabel);
-  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
+  const firstNegative = months.find((month) => month.expectedCents < 0);
+  if (!firstNegative) return null;
   return (
     <p className="m-0 flex items-start gap-2 text-[13px] leading-[18px]">
       <Icon name="alert" size={16} strokeWidth={2} className="mt-px shrink-0 text-negative" />
       <span>
-        Saldo pessoal negativo em <strong className="font-semibold">{list}</strong>, sem contar projetos avulsos.
+        Se continuar assim, o dinheiro acaba em <strong className="font-semibold">{firstNegative.fullLabel}</strong>.
       </span>
     </p>
   );

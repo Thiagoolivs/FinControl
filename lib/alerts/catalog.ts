@@ -67,25 +67,11 @@ export const ALERT_CATALOG: Record<AlertType, AlertSpec> = {
     href: () => "/config",
   },
   SALDO_PROJETADO_NEGATIVO: {
-    label: "Saldo projetado negativo",
-    description: "A projeção fica negativa nos próximos meses.",
+    label: "Dinheiro acabando",
+    description: "Se continuar como nos últimos meses, o dinheiro acaba nos próximos meses.",
     severity: "ALTA",
     params: [{ key: "meses", label: "Olhar os próximos (meses)", kind: "months", initial: 3, min: 1, max: 11 }],
     href: () => "/projecao",
-  },
-  RESERVA_IMPOSTO_BAIXA: {
-    label: "Reserva de imposto baixa",
-    description: "A reserva de imposto não cobre as obrigações do mês (o DAS).",
-    severity: "ALTA",
-    params: [],
-    href: () => "/reservas",
-  },
-  ENTRADA_SEM_STREAM: {
-    label: "Entrada sem stream",
-    description: "Dinheiro entrou e ainda não tem fonte de receita: as reservas não foram lançadas.",
-    severity: "MEDIA",
-    params: [],
-    href: () => "/transacoes/revisar?tipo=entradas",
   },
   LIMITE_FATURAMENTO_MEI: {
     label: "Teto do MEI",
@@ -95,6 +81,13 @@ export const ALERT_CATALOG: Record<AlertType, AlertSpec> = {
       { key: "limiteCents", label: "Teto anual", kind: "cents", initial: 8_100_000, min: 100, max: 1_000_000_000 },
       { key: "avisoBps", label: "Avisar a partir de (% do teto)", kind: "bps", initial: 8_000, min: 1_000, max: 10_000 },
     ],
+    href: () => "/config/receitas",
+  },
+  OBRIGACAO_VENCENDO: {
+    label: "Conta fixa vencendo",
+    description: "Lembrete antes do vencimento de uma conta fixa (ex.: o DAS do MEI).",
+    severity: "MEDIA",
+    params: [{ key: "diasAntes", label: "Avisar com (dias)", kind: "days", initial: 3, min: 0, max: 15 }],
     href: () => "/config/receitas",
   },
 };

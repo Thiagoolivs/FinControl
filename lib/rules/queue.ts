@@ -13,7 +13,7 @@ const since = (from: string | null) => (from ? { date: { gte: toDbDate(from) } }
 const queueWhere = (userId: string, from: string | null) =>
   ({ userId, categoryId: null, transferPeerId: null, isIgnored: false, amountCents: { lt: 0 }, ...since(from) }) as const;
 
-/** Entradas sem stream e sem categoria: toda receita precisa de stream (estorno vira categoria). */
+/** Entradas sem fonte de renda e sem categoria (estorno, reembolso e afins viram categoria). */
 export const incomeQueueWhere = (userId: string, from: string | null = null) =>
   ({ userId, categoryId: null, revenueStreamId: null, transferPeerId: null, isIgnored: false, amountCents: { gt: 0 }, ...since(from) }) as const;
 
@@ -24,7 +24,7 @@ export async function getReviewWindow(userId: string): Promise<{ days: number | 
   return { days, from: days === null ? null : addDays(todayLocal(), -days) };
 }
 
-/** Badge da aba Transações: saídas sem categoria + entradas sem stream, dentro da janela. */
+/** Badge da aba Transações: saídas sem categoria + entradas sem fonte de renda, dentro da janela. */
 export async function countReviewQueue(userId: string): Promise<number> {
   const { from } = await getReviewWindow(userId);
   const [outflows, inflows] = await Promise.all([
@@ -48,7 +48,7 @@ export async function countOutsideWindow(userId: string): Promise<{ outflows: nu
 
 export type IncomeGroup = Omit<QueueGroup, "suggestion">;
 
-/** Entradas sem stream (dentro da janela) agrupadas por pagador/descrição, maiores primeiro. */
+/** Entradas sem fonte de renda (dentro da janela) agrupadas por pagador/descrição, maiores primeiro. */
 export async function getIncomeQueue(userId: string): Promise<IncomeGroup[]> {
   const { from } = await getReviewWindow(userId);
   const rows = await db().transaction.findMany({

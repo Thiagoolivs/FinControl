@@ -88,18 +88,6 @@ export async function getConnections(userId: string) {
 
 export type ConnectionView = Awaited<ReturnType<typeof getConnections>>[number];
 
-/** Saldo dos buckets que tiram dinheiro do disponível: reservas (imposto + custo) e caixa do negócio. */
-export async function getBucketTotals(userId: string, query: ScopeQuery) {
-  const rows = await db().bucket.groupBy({
-    by: ["type"],
-    where: { userId, ...scopeWhere(query), type: { in: ["RESERVA_IMPOSTO", "RESERVA_CUSTO", "CAIXA_PROJETO"] } },
-    _sum: { balanceCents: true },
-  });
-  const total = (types: readonly string[]) =>
-    rows.filter((row) => types.includes(row.type)).reduce((sum, row) => sum + (row._sum.balanceCents ?? 0), 0);
-  return { reservedCents: total(["RESERVA_IMPOSTO", "RESERVA_CUSTO"]), businessCashCents: total(["CAIXA_PROJETO"]) };
-}
-
 // O cron roda uma vez por dia; mais que isso sem leitura = o serviço não está rodando.
 const CRON_STALE_AFTER_MS = 48 * 60 * 60 * 1000;
 

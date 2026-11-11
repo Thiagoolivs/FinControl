@@ -11,7 +11,6 @@ import { ensureDefaultCategories } from "@/lib/rules/categories";
 import { evaluateAlerts } from "@/lib/alerts/evaluate";
 import { refreshRecurringSeries } from "@/lib/projection/recurring";
 import { pushNewAlerts } from "@/lib/push/send";
-import { ensureObligationReservations, refreshBucketBalances } from "@/lib/streams/ledger";
 import { ensureStreamsSetup } from "@/lib/streams/setup";
 import { suggestWithAi } from "@/lib/rules/suggest";
 import { raiseConnectionAlerts } from "./alerts";
@@ -216,9 +215,6 @@ export async function syncUser(
     await ensureDefaultCategories(userId);
     await ensureStreamsSetup(userId);
     categorizadas = await applyRules(userId, "sem-categoria");
-    await ensureObligationReservations(userId);
-    // PENDING que sumiu da Pluggy leva os lançamentos de bucket junto (cascade): o saldo em cache é refeito.
-    await refreshBucketBalances(userId);
     await refreshRecurringSeries(userId);
     if (isGeminiConfigured()) {
       try {

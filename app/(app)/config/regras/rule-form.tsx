@@ -13,14 +13,12 @@ export function RuleForm({
   ruleId,
   categories,
   streams,
-  buckets,
   initialValue,
   sampleDescription,
 }: {
   ruleId: string | null;
   categories: Option[];
   streams: Option[];
-  buckets: Option[];
   initialValue?: Partial<RuleDraft>;
   sampleDescription?: string;
 }) {
@@ -36,7 +34,6 @@ export function RuleForm({
       scope: draft.scope,
       categoryId: draft.categoryId,
       revenueStreamId: draft.revenueStreamId,
-      bucketId: draft.bucketId,
       priority: draft.priority,
       applyRetroactively: draft.applyRetroactively,
     });
@@ -51,7 +48,6 @@ export function RuleForm({
     <RuleEditor
       categories={categories}
       streams={streams}
-      buckets={buckets}
       initialValue={initialValue}
       sampleDescription={sampleDescription}
       submitError={error}

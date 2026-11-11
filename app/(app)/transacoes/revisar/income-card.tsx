@@ -8,7 +8,6 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { compilePattern, type MatchType } from "@/lib/categorization/match";
 import type { IncomeGroup } from "@/lib/rules/queue";
 import type { ActionState } from "../../actions";
-import { NEW_TYPES } from "../../config/receitas/controls";
 import { assignStreamGroupAction, categorizeGroupAction } from "../actions";
 import { GroupTransactions, PatternFields } from "./group-card";
 
@@ -17,7 +16,7 @@ type Option = { id: string; name: string };
 const NEW_STREAM = "novo:";
 
 /**
- * Grupo de entradas sem fonte: renda (stream: as reservas saem na hora; dá para criar a fonte ali mesmo),
+ * Grupo de entradas sem fonte: renda (fonte de renda; dá para criar a fonte ali mesmo),
  * outra entrada (reembolso, rendimento, presente, venda…) ou estorno de um gasto (abate da categoria).
  */
 export function IncomeGroupCard({
@@ -34,7 +33,6 @@ export function IncomeGroupCard({
   const pjCount = group.transactions.filter((transaction) => transaction.scope === "PJ").length;
   const [target, setTarget] = useState("");
   const [streamName, setStreamName] = useState("");
-  const [streamType, setStreamType] = useState<(typeof NEW_TYPES)[number]["value"]>("PROJETO");
   const [streamScope, setStreamScope] = useState<"PF" | "PJ">(pjCount * 2 > group.transactions.length ? "PJ" : "PF");
   const [createRule, setCreateRule] = useState(true);
   const [pattern, setPattern] = useState(group.pattern);
@@ -53,7 +51,7 @@ export function IncomeGroupCard({
     const base = { transactionIds: group.transactions.map((transaction) => transaction.id), createRule, pattern, matchType };
     startTransition(async () => {
       if (creating) {
-        setState(await assignStreamGroupAction({ ...base, revenueStreamId: null, newStream: { name: streamName, type: streamType, scope: streamScope } }));
+        setState(await assignStreamGroupAction({ ...base, revenueStreamId: null, newStream: { name: streamName, scope: streamScope } }));
       } else if (id) {
         setState(
           kind === "s"
@@ -84,7 +82,7 @@ export function IncomeGroupCard({
           className="h-[50px] w-full appearance-none rounded-button bg-surface-elevated px-4 pr-10 text-[16px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <option value="">De onde veio?</option>
-          <optgroup label="Renda (separa imposto e custo)">
+          <optgroup label="Renda (salário, clientes, freelas)">
             {streams.map((stream) => (
               <option key={stream.id} value={`s:${stream.id}`}>
                 {stream.name}
@@ -124,22 +122,17 @@ export function IncomeGroupCard({
               className="h-11 w-full rounded-button bg-surface-elevated px-3 text-[16px] text-text-primary outline-none focus-visible:ring-2 focus-visible:ring-accent"
             />
           </label>
-          <SegmentedControl variant="boxed" label="Tipo" options={NEW_TYPES} value={streamType} onChange={setStreamType} onSurface />
           <SegmentedControl
             variant="boxed"
-            label="Escopo"
+            label="De quem"
             options={[
-              { value: "PF", label: "PF" },
-              { value: "PJ", label: "PJ", tone: "pj" },
+              { value: "PF", label: "Pessoal (PF)" },
+              { value: "PJ", label: "Empresa (PJ)", tone: "pj" },
             ]}
             value={streamScope}
             onChange={setStreamScope}
             onSurface
           />
-          <p className="m-0 text-[13px] leading-[18px] text-text-secondary">
-            Os % de imposto e custo começam em zero; ajuste em Config → Receitas.
-            {streamType === "VENTURE" ? " Um negócio ganha o próprio caixa: o que entra fica lá até você retirar." : ""}
-          </p>
         </div>
       ) : null}
 
@@ -154,7 +147,7 @@ export function IncomeGroupCard({
       <GroupTransactions transactions={group.transactions} kind="in" />
 
       <Button onClick={confirm} loading={pending} disabled={(creating ? !streamName.trim() : !id) || (createRule && !compiled.ok)}>
-        {creating ? "Criar fonte e atribuir" : kind === "c" ? (createRule ? "Criar regra" : "Categorizar") : "Atribuir à stream"}
+        {creating ? "Criar fonte e atribuir" : kind === "c" ? (createRule ? "Criar regra" : "Categorizar") : "Atribuir à fonte"}
       </Button>
       {state.error ? (
         <p role="alert" className="m-0 text-[13px] text-negative">

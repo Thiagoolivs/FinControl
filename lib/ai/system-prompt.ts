@@ -28,7 +28,7 @@ export function buildSystemPrompt(context: PromptContext): string {
     `Sobre o usuário: ${context.aboutMe?.trim() || "(não informado)"}.`,
     `Categorias existentes (id: nome): ${list(context.categories.map((item) => `${item.id}: ${item.name}`))}.`,
     `Metas ativas (id: nome): ${list(context.goals.map((item) => `${item.id}: ${item.name}`))}.`,
-    `Streams de receita (id: nome, tipo): ${list(context.streams.map((item) => `${item.id}: ${item.name}, ${item.type}`))}.`,
+    `Fontes de renda (id: nome, tipo): ${list(context.streams.map((item) => `${item.id}: ${item.name}, ${item.type}`))}.`,
     "Regras invioláveis:",
     ...INVIOLABLE_RULES.map((rule, index) => `${index + 1}. ${rule}`),
     'Períodos vão para as tools como "AAAA-MM". "Mês passado" é o mês anterior ao de hoje.',

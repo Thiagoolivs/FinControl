@@ -34,7 +34,6 @@ export default async function NewRulePage({ searchParams }: PageProps<"/config/r
         ruleId={null}
         categories={categoryOptions(tree)}
         streams={options.streams}
-        buckets={options.buckets}
         sampleDescription={source?.descriptionRaw}
         initialValue={
           suggested

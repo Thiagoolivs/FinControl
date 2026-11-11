@@ -1,18 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { type ProjectionInput, projectCashFlow, prorate } from "./projection";
+import { flowsByMonth, type MonthFlowSummary, projectByAverage, prorate } from "./projection";
 
-const base: ProjectionInput = {
-  today: "2026-10-11",
-  horizonMonths: 3,
-  openingCents: 500_000,
-  recurring: [],
-  installments: [],
-  variableMonthlyCents: 0,
-  goals: [],
-  obligationsMonthlyCents: 0,
-  projectsMonthlyCents: null,
-  business: null,
-};
+const month = (key: string, inCents: number, outCents: number): MonthFlowSummary => ({ month: key, inCents, outCents, netCents: inCents - outCents });
+
+describe("flowsByMonth", () => {
+  it("separa entrada e saída por mês, sem as transferências internas", () => {
+    const flows = flowsByMonth(
+      [
+        { date: "2026-09-05", amountCents: 980_000, internal: false },
+        { date: "2026-09-10", amountCents: -240_000, internal: false },
+        { date: "2026-09-07", amountCents: -320_045, internal: true }, // fatura paga com a conta
+        { date: "2026-09-07", amountCents: 320_045, internal: true },
+        { date: "2026-10-08", amountCents: 400_000, internal: false }, // Pix da PJ, olhando só a PF
+        { date: "2026-08-31", amountCents: -1_000, internal: false }, // fora dos meses pedidos
+      ],
+      ["2026-09", "2026-10"],
+    );
+    expect(flows).toEqual([month("2026-09", 980_000, 240_000), month("2026-10", 400_000, 0)]);
+  });
+
+  it("mês sem movimento aparece zerado", () => {
+    expect(flowsByMonth([], ["2026-09"])).toEqual([month("2026-09", 0, 0)]);
+  });
+});
 
 describe("prorate", () => {
   it("arredonda para o lado pior", () => {
@@ -23,67 +33,44 @@ describe("prorate", () => {
   });
 });
 
-describe("projectCashFlow", () => {
-  it("sem premissas, o saldo fica parado", () => {
-    expect(projectCashFlow(base).map((month) => `${month.month}:${month.realisticCents}`)).toEqual(["2026-10:500000", "2026-11:500000", "2026-12:500000"]);
-  });
+describe("projectByAverage", () => {
+  const history = [month("2026-08", 1_580_000, 1_200_000), month("2026-09", 1_580_000, 1_700_000), month("2026-10", 1_580_000, 1_000_000)];
 
-  it("recorrentes caem nos meses certos; atrasada ainda esperada cai no mês corrente", () => {
-    const months = projectCashFlow({
-      ...base,
-      recurring: [
-        { amountCents: 800_000, intervalDays: 30, nextExpectedDate: "2026-11-05" },
-        { amountCents: -8_990, intervalDays: 30, nextExpectedDate: "2026-10-04" },
-      ],
-    });
-    expect(months.map((month) => [month.incomeCents, month.expenseCents])).toEqual([
-      [0, -8_990],
-      [800_000, -8_990],
-      [800_000, -8_990],
+  it("parte do livre de hoje e soma a média; a faixa vai do pior ao melhor mês", () => {
+    const result = projectByAverage({ today: "2026-11-30", horizonMonths: 3, openingCents: 3_000_000, history });
+    expect(result.averageNetCents).toBe(280_000);
+    expect(result.averageInCents).toBe(1_580_000);
+    expect(result.averageOutCents).toBe(1_300_000);
+    expect(result.worst?.month).toBe("2026-09");
+    expect(result.best?.month).toBe("2026-10");
+    // Último dia do mês: o mês corrente não soma nada (faltam 0 dias).
+    expect(result.months).toEqual([
+      { month: "2026-11", expectedCents: 3_000_000, lowCents: 3_000_000, highCents: 3_000_000 },
+      { month: "2026-12", expectedCents: 3_280_000, lowCents: 2_880_000, highCents: 3_580_000 },
+      { month: "2027-01", expectedCents: 3_560_000, lowCents: 2_760_000, highCents: 4_160_000 },
     ]);
-    expect(months.at(-1)?.realisticCents).toBe(500_000 + 1_600_000 - 26_970);
   });
 
-  it("semanal soma as semanas do mês", () => {
-    const months = projectCashFlow({ ...base, horizonMonths: 2, recurring: [{ amountCents: -1000, intervalDays: 7, nextExpectedDate: "2026-10-17" }] });
-    // out: 17, 24, 31; nov: 7, 14, 21, 28
-    expect(months.map((month) => month.expenseCents)).toEqual([-3000, -4000]);
+  it("o mês corrente conta só os dias que faltam", () => {
+    const result = projectByAverage({ today: "2026-11-15", horizonMonths: 1, openingCents: 0, history: [month("2026-10", 0, 300_000)] });
+    expect(result.months[0]?.expectedCents).toBe(-150_000);
   });
 
-  it("variáveis: mês corrente proporcional aos dias que faltam", () => {
-    const months = projectCashFlow({ ...base, variableMonthlyCents: -310_000 });
-    // 11/out: faltam 20 de 31 dias
-    expect(months.map((month) => month.expenseCents)).toEqual([-200_000, -310_000, -310_000]);
+  it("gastando mais do que entra, a projeção desce", () => {
+    const result = projectByAverage({ today: "2026-11-30", horizonMonths: 4, openingCents: 500_000, history: [month("2026-10", 1_000_000, 1_400_000)] });
+    expect(result.months.map((item) => item.expectedCents)).toEqual([500_000, 100_000, -300_000, -700_000]);
   });
 
-  it("parcelas, metas e obrigações", () => {
-    const months = projectCashFlow({
-      ...base,
-      installments: [
-        { month: "2026-11", amountCents: -30_000 },
-        { month: "2027-05", amountCents: -30_000 },
-      ],
-      goals: [{ monthlyCents: 100_000, untilMonth: "2026-11", currentMonthCents: 40_000 }],
-      obligationsMonthlyCents: 8_650,
-    });
-    expect(months.map((month) => [month.expenseCents, month.goalsCents, month.obligationsCents])).toEqual([
-      [0, -40_000, 0],
-      [-30_000, -100_000, -8_650],
-      [0, 0, -8_650],
+  it("sem histórico, fica parada no ponto de partida e diz que não há média", () => {
+    const result = projectByAverage({ today: "2026-11-11", horizonMonths: 2, openingCents: 123_456, history: [] });
+    expect(result.averageNetCents).toBeNull();
+    expect(result.months).toEqual([
+      { month: "2026-11", expectedCents: 123_456, lowCents: 123_456, highCents: 123_456 },
+      { month: "2026-12", expectedCents: 123_456, lowCents: 123_456, highCents: 123_456 },
     ]);
-    expect(months.map((month) => month.realisticCents)).toEqual([460_000, 321_350, 312_700]);
   });
 
-  it("projetos só na linha otimista; negócio em linha separada", () => {
-    const months = projectCashFlow({ ...base, projectsMonthlyCents: 200_000, business: { openingCents: 1_000_000, monthlyNetCents: -310_000 } });
-    expect(months.map((month) => month.optimisticCents)).toEqual([500_000, 700_000, 900_000]);
-    expect(months.map((month) => month.realisticCents)).toEqual([500_000, 500_000, 500_000]);
-    expect(months.map((month) => month.businessCents)).toEqual([800_000, 490_000, 180_000]);
-  });
-
-  it("sem projetos nem negócio, as linhas extras são null", () => {
-    const [month] = projectCashFlow(base);
-    expect(month?.optimisticCents).toBeNull();
-    expect(month?.businessCents).toBeNull();
+  it("média arredonda para o lado pior", () => {
+    expect(projectByAverage({ today: "2026-11-11", horizonMonths: 1, openingCents: 0, history: [month("a", 0, 1), month("b", 0, 0)] }).averageNetCents).toBe(-1);
   });
 });

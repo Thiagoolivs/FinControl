@@ -54,7 +54,7 @@ describe("pickHighlight", () => {
 
   it("o maior que cresceu além do limite vira a manchete", () => {
     const result = pickHighlight([candidate("Restaurantes", 120_000, 110_000), candidate("Delivery", 84_700, 52_900), candidate("Lazer", 30_000, 5_000)], 2_000);
-    expect(result).toEqual({ id: "Delivery", name: "Delivery", icon: "dots", cents: 84_700, lastMonthToDateCents: 52_900, variationBps: 6_011, reason: "cresceu" });
+    expect(result).toEqual({ id: "Delivery", name: "Delivery", icon: "dots", cents: 84_700, lastMonthToDateCents: 52_900, variationBps: 6_011, growthCents: 31_800, reason: "cresceu" });
   });
 
   it("crescimento pequeno demais (menos de um quarto do maior) não disputa", () => {
@@ -62,10 +62,11 @@ describe("pickHighlight", () => {
     expect(result?.name).toBe("Restaurantes");
     expect(result?.reason).toBe("maior");
     expect(result?.variationBps).toBe(909);
+    expect(result?.growthCents).toBe(10_000);
   });
 
   it("sem limite ou sem mês passado, fica o maior", () => {
-    expect(pickHighlight([candidate("Delivery", 84_700, 10_000), candidate("Lazer", 90_000, null)], null)).toMatchObject({ name: "Lazer", reason: "maior", variationBps: null });
+    expect(pickHighlight([candidate("Delivery", 84_700, 10_000), candidate("Lazer", 90_000, null)], null)).toMatchObject({ name: "Lazer", reason: "maior", variationBps: null, growthCents: null });
   });
 
   it("sem gasto, sem manchete", () => {

@@ -57,6 +57,8 @@ export type HighlightCandidate = { id: string; name: string; icon: string; cents
 export type Highlight = HighlightCandidate & {
   /** Variação sobre o mesmo ponto do mês passado, em bps; null sem base. */
   variationBps: number | null;
+  /** Quanto a mais (ou a menos, negativo) que no mesmo ponto do mês passado; null sem base. */
+  growthCents: number | null;
   /** "cresceu": passou do limite do usuário; "maior": só o maior gasto. */
   reason: "cresceu" | "maior";
 };
@@ -77,11 +79,12 @@ export function pickHighlight(candidates: readonly HighlightCandidate[], growthT
   const withVariation = bySize.map((candidate) => ({
     ...candidate,
     variationBps: candidate.lastMonthToDateCents === null ? null : variationBps(candidate.lastMonthToDateCents, candidate.cents),
+    growthCents: candidate.lastMonthToDateCents === null ? null : candidate.cents - candidate.lastMonthToDateCents,
   }));
   const grown =
     growthThresholdBps === null
       ? undefined
       : withVariation.find((candidate) => candidate.variationBps !== null && candidate.variationBps >= growthThresholdBps && candidate.cents * 4 >= largest.cents);
   if (grown) return { ...grown, reason: "cresceu" };
-  return { ...(withVariation[0] as HighlightCandidate & { variationBps: number | null }), reason: "maior" };
+  return { ...(withVariation[0] as Omit<Highlight, "reason">), reason: "maior" };
 }

@@ -23,6 +23,7 @@ import { Eyebrow } from "@/components/ui/text";
 import { TransactionList } from "@/components/ui/transaction-item";
 import { InsightList } from "@/components/ui/insight-list";
 import { MoneyWaffle } from "@/components/ui/money-waffle";
+import { MonthSummary } from "@/components/ui/month-summary";
 import { MonthScore } from "@/components/ui/month-score";
 import { Section } from "@/components/ui/section";
 import { SpendCard } from "@/components/ui/spend-card";
@@ -48,6 +49,10 @@ const THEMES: readonly SegmentOption<"dark" | "light">[] = [
   { value: "light", label: "Claro" },
 ];
 
+const SUMMARY_STATES: readonly SegmentOption<"sobrou" | "faltou">[] = [
+  { value: "sobrou", label: "Sobrou" },
+  { value: "faltou", label: "Saiu a mais" },
+];
 const WAFFLE_STATES: readonly SegmentOption<"sobra" | "passou">[] = [
   { value: "sobra", label: "Com sobra" },
   { value: "passou", label: "Saiu mais que entrou" },
@@ -132,6 +137,18 @@ export function Catalog() {
             status={status}
             emptyTitle="Nenhum gasto em outubro ainda."
             errorAction={retry}
+          />
+        )}
+      </Showcase>
+
+      <Showcase name="MonthSummary" states={SUMMARY_STATES}>
+        {(state) => (
+          <MonthSummary
+            inCents={state === "sobrou" ? 1_580_000 : 650_000}
+            outCents={state === "sobrou" ? 583_461 : 812_340}
+            investedCents={state === "sobrou" ? 100_000 : 0}
+            leftoverCents={state === "sobrou" ? 996_539 : 0}
+            overflowCents={state === "sobrou" ? 0 : 162_340}
           />
         )}
       </Showcase>

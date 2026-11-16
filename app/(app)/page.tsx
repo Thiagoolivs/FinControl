@@ -5,26 +5,19 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon, isIconName } from "@/components/ui/icon";
 import { InsightList } from "@/components/ui/insight-list";
 import { Money } from "@/components/ui/money";
-import { MoneyWaffle } from "@/components/ui/money-waffle";
-import { MonthScore } from "@/components/ui/month-score";
+import { MonthSummary } from "@/components/ui/month-summary";
 import { Section } from "@/components/ui/section";
-import { SpendCard } from "@/components/ui/spend-card";
 import type { ScopeFilter as ScopeValue } from "@/components/ui/status";
-import { Eyebrow } from "@/components/ui/text";
-import { TransactionList } from "@/components/ui/transaction-item";
 import { getAlerts } from "@/lib/alerts/queries";
 import { requireUser } from "@/lib/auth/dal";
 import { formatElapsed, formatMoment, formatMonthLabel, todayLocal } from "@/lib/dates";
-import { db } from "@/lib/db";
 import { summarizeBalances } from "@/lib/finance/balance";
 import { monthInsights, pickHighlight } from "@/lib/finance/insights";
-import { perHundred, savingsRateBps } from "@/lib/finance/month-flow";
-import { monthAchievements, savingsStreak } from "@/lib/finance/month-score";
-import { formatBps, shareBps } from "@/lib/finance/share";
+import { shareBps } from "@/lib/finance/share";
 import { isPluggyConfigured } from "@/lib/pluggy/client";
-import { getAreaSpend, getHighlightCandidates } from "@/lib/queries/area-spend";
+import { getHighlightCandidates } from "@/lib/queries/area-spend";
 import { getMonthOverview } from "@/lib/queries/month-flow";
-import { getAccounts, getConnections, getRecentTransactions } from "@/lib/queries/overview";
+import { getAccounts, getConnections } from "@/lib/queries/overview";
 import { parseScopeParam } from "@/lib/queries/scope";
 import { getMonthCategoryBreakdown } from "@/lib/queries/transactions";
 import { countReviewQueue } from "@/lib/rules/queue";
@@ -36,10 +29,7 @@ import { connectionIssues } from "./connection-health";
 import { PAGE_CLASS, PageHeader } from "./page-header";
 import { RefreshButton } from "./refresh-button";
 import { ScopeFilter } from "./scope-filter";
-import { groupByDay, isTransferRow, toTransactionItem } from "./transaction-groups";
 
-const RECENT_DAYS = 30;
-const RECENT_ITEMS = 5;
 const HOME_ALERTS = 3;
 const TOP_AREAS = 5;
 
@@ -50,10 +40,9 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   const today = todayLocal();
   const month = today.slice(0, 7);
 
-  const [connections, accounts, recent, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, settings, candidates, duplicates] = await Promise.all([
+  const [connections, accounts, refreshAt, rules, alerts, overview, breakdown, overBps, reviewCount, candidates, duplicates] = await Promise.all([
     getConnections(user.id),
     getAccounts(user.id, query),
-    getRecentTransactions(user.id, query, RECENT_DAYS, RECENT_ITEMS),
     manualRefreshAvailableAt(user.id),
     connectionAlertRules(user.id),
     getAlerts(user.id, { unreadOnly: true, limit: 50 }),
@@ -61,13 +50,12 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
     getMonthCategoryBreakdown(user.id, query, month),
     categoryOverThresholdBps(user.id),
     countReviewQueue(user.id),
-    db().user.findUniqueOrThrow({ where: { id: user.id }, select: { savingsTargetBps: true } }),
     getHighlightCandidates(user.id, query, today),
     getDuplicateConnections(user.id),
   ]);
-  // Manchete do mês: o gasto de estilo de vida que mais cresceu além do limite "acima da média" do usuário.
+  // O gasto de estilo de vida que mais cresceu além do limite "acima da média" do usuário vira uma frase em R$.
   const highlight = pickHighlight(candidates, overBps === null ? null : overBps - 10_000);
-  const highlightSpend = highlight ? await getAreaSpend(user.id, query, highlight.id, month, today) : null;
+  const grown = highlight?.reason === "cresceu" && highlight.growthCents !== null && highlight.growthCents > 0 ? highlight : null;
   // Erro de conexão e consentimento já aparecem como aviso no topo, com o estado de agora.
   const unreadAlerts = alerts.filter((alert) => alert.type !== "CONEXAO_ERRO" && alert.type !== "CONSENTIMENTO_EXPIRANDO");
 
@@ -81,36 +69,19 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
   );
 
   const { flow } = overview;
-  const hundred = perHundred(flow);
+  const outCents = flow.spentCents + flow.investedCents;
   const areas = breakdown.filter((row) => row.id !== "sem");
   const overAverage = (ratio: number | null) => overBps !== null && ratio !== null && ratio >= overBps;
-  const namesOf = (kind: "ESSENCIAL" | "VARIAVEL") =>
-    areas
-      .filter((row) => row.kind === kind)
-      .slice(0, 3)
-      .map((row) => row.name)
-      .join(", ");
-  const insights = monthInsights({
+  // Só a frase do ritmo (gastou a mais ou a menos que no mesmo ponto do mês passado): o resto já está na lista.
+  const pace = monthInsights({
     flow,
     areas: areas.map((row) => ({ name: row.name, cents: row.cents, ratioBps: row.averageRatioBps })),
     overThresholdBps: overBps,
     lastMonthToDateCents: overview.lastMonthToDateCents,
     dayOfMonth: Number(today.slice(8, 10)),
-  });
-  const hasHistory = areas.some((row) => row.averageRatioBps !== null);
-  const achievements = monthAchievements({
-    flow,
-    targetBps: settings.savingsTargetBps,
-    reviewCount,
-    lastMonthToDateCents: overview.lastMonthToDateCents,
-    overAverageAreas: overBps !== null && hasHistory ? areas.filter((row) => overAverage(row.averageRatioBps)).length : null,
-  });
+  }).filter((insight) => insight.key === "ritmo");
   const topAreas = breakdown.slice(0, TOP_AREAS);
   const largestArea = topAreas[0]?.cents ?? 0;
-
-  const groups = groupByDay(recent, today, (row) =>
-    toTransactionItem(row, isTransferRow(row) ? `${row.account.name} · transferência entre contas` : row.account.name, `/transacoes/${row.id}`),
-  );
   const connectLink = (
     <Link href="/config" className="inline-flex min-h-11 items-center text-[15px] text-accent">
       Conectar banco
@@ -171,58 +142,17 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
 
       {connections.length > 0 ? (
         <div className="flex flex-col gap-16 pt-4 pb-4">
-          {highlight && highlightSpend ? (
-            <section aria-labelledby="destaque" className="flex flex-col gap-6">
-              <header className="flex flex-col gap-3">
-                <Eyebrow as="p">Destaque do mês</Eyebrow>
-                <h2 id="destaque" className="m-0 text-[34px] font-light leading-10 tracking-[-0.03em]">
-                  <Money cents={highlight.cents} hideZeroCents className="font-normal" /> em {highlight.name} neste mês.
-                </h2>
-                <p className={`m-0 text-[15px] leading-[21px] ${highlight.reason === "cresceu" ? "text-warning" : "text-text-secondary"}`}>
-                  {highlight.reason === "cresceu" && highlight.variationBps !== null
-                    ? `${formatBps(highlight.variationBps)} a mais que no mesmo ponto do mês passado.`
-                    : "Seu maior gasto de estilo de vida até agora."}
-                </p>
-              </header>
-              <SpendCard
-                icon={highlightSpend.icon}
-                title={`Gastos com ${highlight.name} neste mês`}
-                cents={highlightSpend.totalCents}
-                variationBps={highlight.variationBps}
-                current={highlightSpend.current}
-                previous={highlightSpend.previous}
-                daysInMonth={highlightSpend.daysInMonth}
-                href={`/transacoes/categorias/${highlight.id}`}
-              />
-            </section>
-          ) : null}
-
-          <Section id="para-onde" eyebrow={`${monthName} até hoje`} title="Para onde foi seu dinheiro">
-            {hundred ? (
+          <Section id="mes" eyebrow={`${monthName} até hoje`} title="Este mês">
+            {flow.incomeCents > 0 || outCents > 0 ? (
               <>
-                <dl className="m-0 grid grid-cols-2 gap-6">
-                  <div className="flex flex-col gap-1">
-                    <dt className="text-[13px] text-text-secondary">Entrou</dt>
-                    <dd className="m-0">
-                      <Money cents={flow.incomeCents} kind={flow.incomeCents > 0 ? "in" : "neutral"} className="text-[22px] font-light tracking-[-0.01em]" />
-                    </dd>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <dt className="text-[13px] text-text-secondary">Saiu</dt>
-                    <dd className="m-0">
-                      <Money cents={flow.spentCents + flow.investedCents} className="text-[22px] font-light tracking-[-0.01em]" />
-                    </dd>
-                  </div>
-                </dl>
-                <MoneyWaffle
-                  data={hundred}
-                  legend={{
-                    essencial: { hint: namesOf("ESSENCIAL") || undefined, href: "/transacoes/categorias" },
-                    estilo: { hint: namesOf("VARIAVEL") || undefined, href: "/transacoes/categorias" },
-                    sem: { hint: "toque para dizer o que foi", href: "/transacoes/revisar" },
-                  }}
+                <MonthSummary
+                  inCents={flow.incomeCents}
+                  outCents={outCents}
+                  investedCents={flow.investedCents}
+                  leftoverCents={flow.leftoverCents}
+                  overflowCents={flow.overflowCents}
                 />
-                <InsightList insights={insights} links={{ sem: { href: "/transacoes/revisar", label: "Revisar" } }} />
+                <InsightList insights={pace} />
               </>
             ) : (
               <EmptyState compact title="Nada entrou nem saiu neste mês ainda." description="Transferências entre suas contas e pagamento de fatura não contam." />
@@ -230,7 +160,15 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
           </Section>
 
           {topAreas.length > 0 ? (
-            <Section id="areas" eyebrow="Gastos por área" title="Onde mais saiu">
+            <Section id="areas" eyebrow="Gastos do mês" title="Para onde foi">
+              {grown ? (
+                <Link href={`/transacoes/categorias/${grown.id}`} className="flex min-h-11 items-start gap-3 text-text-primary no-underline">
+                  <Icon name="alert" size={18} className="mt-0.5 shrink-0 text-warning" />
+                  <span className="text-[15px] leading-[22px]">
+                    {grown.name}: <Money cents={grown.growthCents ?? 0} /> a mais que no mesmo ponto do mês passado.
+                  </span>
+                </Link>
+              ) : null}
               <ul className="m-0 flex list-none flex-col gap-5 p-0">
                 {topAreas.map((row) => {
                   const over = overAverage(row.averageRatioBps);
@@ -243,13 +181,10 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                         <span className="flex items-center gap-3">
                           <Icon name={isIconName(row.icon) ? row.icon : "dots"} size={20} className={over ? "shrink-0 text-warning" : "shrink-0 text-text-secondary"} />
                           <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-                            <span className="text-[16px] font-medium">{row.name}</span>
-                            <span className="text-[13px] text-text-secondary">{formatBps(shareBps(row.cents, flow.spentCents))}</span>
-                            {over && row.averageRatioBps !== null ? (
-                              <span className="text-[13px] text-warning">{formatBps(row.averageRatioBps - 10_000)} acima da média</span>
-                            ) : null}
+                            <span className={`text-[16px] ${row.id === "sem" ? "text-text-secondary" : "font-medium"}`}>{row.name}</span>
+                            {over ? <span className="text-[13px] text-warning">acima da média</span> : null}
                           </span>
-                          <Money cents={row.cents} className="shrink-0 text-[16px]" />
+                          <Money cents={row.cents} hideZeroCents className="shrink-0 text-[16px]" />
                         </span>
                         <span aria-hidden="true" className="ml-8 h-1.5 rounded-full bg-text-primary/8">
                           <span
@@ -263,45 +198,53 @@ export default async function TodayPage({ searchParams }: PageProps<"/">) {
                 })}
               </ul>
               <Link href="/transacoes/categorias" className="flex min-h-11 items-center self-start text-[15px] text-accent">
-                Ver todas as áreas
+                Ver todos os gastos
               </Link>
             </Section>
           ) : null}
 
-          <Section id="placar" eyebrow="Placar" title="Seu mês">
-            <MonthScore
-              savingsBps={savingsRateBps(flow)}
-              targetBps={settings.savingsTargetBps}
-              streak={savingsStreak(overview.closedMonths, settings.savingsTargetBps)}
-              achievements={achievements}
-              settingsHref="/config#placar"
-            />
-          </Section>
-
-          {unreadAlerts.length > 0 ? (
-            <Section id="alertas" eyebrow="Alertas" title={unreadAlerts.length === 1 ? "1 coisa para olhar" : `${unreadAlerts.length} coisas para olhar`}>
-              <AlertList
-                alerts={unreadAlerts.slice(0, HOME_ALERTS).map((alert) => ({
-                  id: alert.id,
-                  severity: alert.severity,
-                  title: alert.title,
-                  body: alert.body,
-                  when: formatMoment(alert.createdAt),
-                  read: false,
-                  href: alert.href,
-                }))}
-              />
-              <Link href="/alertas" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
-                {unreadAlerts.length > HOME_ALERTS ? `Ver todos (${unreadAlerts.length})` : "Central de alertas"}
-              </Link>
-            </Section>
-          ) : null}
-
-          <Section id="recentes" eyebrow="Movimento" title="Últimas transações">
-            {recent.length === 0 ? <EmptyState compact title={`Nenhuma transação nos últimos ${RECENT_DAYS} dias.`} /> : <TransactionList groups={groups} />}
-            <Link href="/transacoes" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
-              Ver todas as transações
-            </Link>
+          <Section id="fazer" eyebrow="Pendências" title="Para fazer">
+            {reviewCount > 0 ? (
+              <div className="flex items-center gap-4 rounded-card bg-surface p-5">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[17px] font-semibold tabular-nums text-accent">
+                  {reviewCount > 99 ? "99+" : reviewCount}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                  <span className="text-[16px]">Sem categoria</span>
+                  <span className="text-[13px] text-text-secondary">{reviewCount === 1 ? "Diga o que foi esta transação." : "Diga o que foi cada transação."}</span>
+                </span>
+                <Link
+                  href="/transacoes/revisar"
+                  className="flex h-11 shrink-0 items-center rounded-button bg-accent-fill px-4 text-[15px] font-medium text-white no-underline"
+                >
+                  Classificar
+                </Link>
+              </div>
+            ) : null}
+            {unreadAlerts.length > 0 ? (
+              <>
+                <AlertList
+                  alerts={unreadAlerts.slice(0, HOME_ALERTS).map((alert) => ({
+                    id: alert.id,
+                    severity: alert.severity,
+                    title: alert.title,
+                    body: alert.body,
+                    when: formatMoment(alert.createdAt),
+                    read: false,
+                    href: alert.href,
+                  }))}
+                />
+                <Link href="/alertas" className="flex min-h-11 items-center self-start text-[15px] text-accent no-underline">
+                  {unreadAlerts.length > HOME_ALERTS ? `Ver todos os alertas (${unreadAlerts.length})` : "Central de alertas"}
+                </Link>
+              </>
+            ) : null}
+            {reviewCount === 0 && unreadAlerts.length === 0 ? (
+              <p className="m-0 flex items-center gap-3 text-[15px] text-text-secondary">
+                <Icon name="check" size={18} className="shrink-0 text-positive" />
+                Tudo em dia.
+              </p>
+            ) : null}
           </Section>
         </div>
       ) : null}
